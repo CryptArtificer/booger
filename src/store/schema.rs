@@ -62,10 +62,36 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             INSERT INTO chunks_fts(chunks_fts, rowid, name, content) VALUES('delete', old.id, old.name, old.content);
             INSERT INTO chunks_fts(rowid, name, content) VALUES (new.id, new.name, new.content);
         END;
+        -- Volatile context: annotations attached to files/symbols/line-ranges.
+        -- session_id scopes annotations to a session; NULL means persistent.
+        -- expires_at enables TTL; NULL means no expiry.
+        CREATE TABLE IF NOT EXISTS annotations (
+            id         INTEGER PRIMARY KEY,
+            target     TEXT NOT NULL,     -- file path, 'file:line', or symbol name
+            note       TEXT NOT NULL,
+            session_id TEXT,
+            created_at TEXT NOT NULL,
+            expires_at TEXT              -- ISO8601 timestamp, NULL = no expiry
+        );
+        CREATE INDEX IF NOT EXISTS idx_annotations_target ON annotations(target);
+        CREATE INDEX IF NOT EXISTS idx_annotations_session ON annotations(session_id);
+
+        -- Volatile context: working set — focused and visited/blacklisted paths.
+        -- kind: 'focus' (boost in search) or 'visited' (deprioritize in search)
+        CREATE TABLE IF NOT EXISTS workset (
+            id         INTEGER PRIMARY KEY,
+            path       TEXT NOT NULL,
+            kind       TEXT NOT NULL CHECK(kind IN ('focus', 'visited')),
+            session_id TEXT,
+            created_at TEXT NOT NULL,
+            UNIQUE(path, kind, session_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_workset_kind ON workset(kind);
+        CREATE INDEX IF NOT EXISTS idx_workset_session ON workset(session_id);
     ")?;
 
     conn.execute(
-        "INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '2')",
+        "INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '3')",
         [],
     )?;
 

@@ -50,11 +50,61 @@ enum Commands {
         target: String,
         /// The note to attach
         note: String,
+        /// Project root
+        #[arg(short, long, default_value = ".")]
+        root: String,
+        /// Session ID (scopes annotation to a session)
+        #[arg(short, long)]
+        session: Option<String>,
+        /// TTL in seconds (annotation auto-expires)
+        #[arg(short, long)]
+        ttl: Option<i64>,
     },
-    /// Set focus on specific paths to boost their results
+    /// List annotations
+    Annotations {
+        /// Filter by target
+        #[arg(short, long)]
+        target: Option<String>,
+        /// Project root
+        #[arg(short, long, default_value = ".")]
+        root: String,
+        /// Session ID filter
+        #[arg(short, long)]
+        session: Option<String>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Set focus on specific paths to boost their search results
     Focus {
         /// Paths to focus on
         paths: Vec<String>,
+        /// Project root
+        #[arg(short, long, default_value = ".")]
+        root: String,
+        /// Session ID
+        #[arg(short, long)]
+        session: Option<String>,
+    },
+    /// Mark paths as visited (deprioritize in search)
+    Visit {
+        /// Paths to mark as visited
+        paths: Vec<String>,
+        /// Project root
+        #[arg(short, long, default_value = ".")]
+        root: String,
+        /// Session ID
+        #[arg(short, long)]
+        session: Option<String>,
+    },
+    /// Clear volatile context (annotations, working set)
+    Forget {
+        /// Project root
+        #[arg(short, long, default_value = ".")]
+        root: String,
+        /// Session ID to clear (omit to clear all)
+        #[arg(short, long)]
+        session: Option<String>,
     },
     /// Show index status and statistics
     Status {
@@ -91,13 +141,20 @@ fn main() -> Result<()> {
             todo!("M3: semantic search")
         }
         Commands::Mcp { root } => cmd_mcp(&root),
-        Commands::Annotate { target, note } => {
-            println!("Annotating {target}: {note}");
-            todo!("M4: volatile context")
+        Commands::Annotate { target, note, root, session, ttl } => {
+            cmd_annotate(&root, &target, &note, session.as_deref(), ttl)
         }
-        Commands::Focus { paths } => {
-            println!("Focusing on: {}", paths.join(", "));
-            todo!("M4: volatile context")
+        Commands::Annotations { target, root, session, json } => {
+            cmd_annotations(&root, target.as_deref(), session.as_deref(), json)
+        }
+        Commands::Focus { paths, root, session } => {
+            cmd_focus(&root, &paths, session.as_deref())
+        }
+        Commands::Visit { paths, root, session } => {
+            cmd_visit(&root, &paths, session.as_deref())
+        }
+        Commands::Forget { root, session } => {
+            cmd_forget(&root, session.as_deref())
         }
     }
 }
@@ -195,6 +252,76 @@ fn cmd_search(
         }
     }
 
+    Ok(())
+}
+
+fn cmd_annotate(
+    root: &str,
+    target: &str,
+    note: &str,
+    session_id: Option<&str>,
+    ttl: Option<i64>,
+) -> Result<()> {
+    let root = PathBuf::from(root);
+    let config = Config::load(&root).unwrap_or_default();
+    let id = booger::context::annotations::add(&root, &config, target, note, session_id, ttl)?;
+    eprintln!("Annotation #{id} added to {target}");
+    Ok(())
+}
+
+fn cmd_annotations(
+    root: &str,
+    target: Option<&str>,
+    session_id: Option<&str>,
+    json: bool,
+) -> Result<()> {
+    let root = PathBuf::from(root);
+    let config = Config::load(&root).unwrap_or_default();
+    let anns = booger::context::annotations::list(&root, &config, target, session_id)?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&anns)?);
+    } else if anns.is_empty() {
+        eprintln!("No annotations.");
+    } else {
+        for a in &anns {
+            let expires = a
+                .expires_at
+                .as_deref()
+                .map(|e| format!(" (expires: {e})"))
+                .unwrap_or_default();
+            println!("  #{} [{}]{} — {}", a.id, a.target, expires, a.note);
+        }
+    }
+    Ok(())
+}
+
+fn cmd_focus(root: &str, paths: &[String], session_id: Option<&str>) -> Result<()> {
+    let root = PathBuf::from(root);
+    let config = Config::load(&root).unwrap_or_default();
+    booger::context::workset::focus(&root, &config, paths, session_id)?;
+    eprintln!("Focused: {}", paths.join(", "));
+    Ok(())
+}
+
+fn cmd_visit(root: &str, paths: &[String], session_id: Option<&str>) -> Result<()> {
+    let root = PathBuf::from(root);
+    let config = Config::load(&root).unwrap_or_default();
+    booger::context::workset::visit(&root, &config, paths, session_id)?;
+    eprintln!("Visited: {}", paths.join(", "));
+    Ok(())
+}
+
+fn cmd_forget(root: &str, session_id: Option<&str>) -> Result<()> {
+    let root = PathBuf::from(root);
+    let config = Config::load(&root).unwrap_or_default();
+    let anns = booger::context::annotations::clear_session(
+        &root,
+        &config,
+        session_id.unwrap_or(""),
+    )?;
+    let ws = booger::context::workset::clear(&root, &config, session_id)?;
+    eprintln!("Cleared {anns} annotations, {ws} workset entries");
     Ok(())
 }
 
