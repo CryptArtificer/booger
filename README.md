@@ -130,48 +130,26 @@ still require a session restart for the client to discover them.
 
 ### Available MCP Tools
 
-#### Search & Discovery
-
-| Tool | Description |
-|---|---|
-| `search` | Full-text search with [BM25](https://en.wikipedia.org/wiki/Okapi_BM25) ranking, volatile context re-ranking, kind/language/path filters |
-| `semantic-search` | Similarity search via local embeddings (requires [Ollama](https://ollama.ai/)) |
-| `hybrid-search` | Combined FTS + semantic search with tunable alpha weighting |
-| `grep` | Regex/literal search within indexed chunks — returns matching lines with context |
-| `references` | Find all usages of a symbol: definitions, call sites, type references, imports |
-| `symbols` | List all symbols in a file/directory — structural outline with smart signatures |
-
-#### Indexing & Embeddings
-
-| Tool | Description |
-|---|---|
-| `index` | Index a directory (incremental, BLAKE3 hash-based change detection) |
-| `status` | Index stats: files, chunks, languages, chunk kind breakdown |
-| `embed` | Generate embeddings for semantic search via [Ollama](https://ollama.ai/) |
-
-#### Volatile Context (Working Memory)
-
 | Tool | Description |
 |---|---|
 | `annotate` | Attach notes to files/symbols/line-ranges with optional TTL |
 | `annotations` | List annotations (filterable by target and session) |
-| `focus` | Boost search results for specific paths |
-| `visit` | Deprioritize already-seen paths in search |
-| `forget` | Clear volatile context (all or session-scoped) |
-
-#### Git Integration
-
-| Tool | Description |
-|---|---|
 | `branch-diff` | Structural diff between branches — added/modified/removed symbols per file |
-| `draft-commit` | Generate commit message from staged/unstaged structural changes |
 | `changelog` | Generate markdown changelog from branch diff |
-
-#### Registry
-
-| Tool | Description |
-|---|---|
+| `draft-commit` | Generate commit message from staged/unstaged structural changes |
+| `embed` | Generate embeddings for semantic search via [Ollama](https://ollama.ai/) |
+| `focus` | Boost search results for specific paths |
+| `forget` | Clear volatile context (all or session-scoped) |
+| `grep` | Regex/literal search within indexed chunks — returns matching lines with context |
+| `hybrid-search` | Combined FTS + semantic search with tunable alpha weighting |
+| `index` | Index a directory (incremental, BLAKE3 hash-based change detection) |
 | `projects` | List registered projects |
+| `references` | Find all usages of a symbol: definitions, call sites, type references, imports |
+| `search` | Full-text search with [BM25](https://en.wikipedia.org/wiki/Okapi_BM25) ranking, volatile context re-ranking, kind/language/path filters |
+| `semantic-search` | Similarity search via local embeddings (requires [Ollama](https://ollama.ai/)) |
+| `status` | Index stats: files, chunks, languages, chunk kind breakdown |
+| `symbols` | List all symbols in a file/directory — structural outline with smart signatures |
+| `visit` | Deprioritize already-seen paths in search |
 
 All tools accept an optional `project` parameter — a registered project
 name or a literal path. Unknown project names return an error (no silent
