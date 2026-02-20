@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -114,4 +115,79 @@ impl Config {
             .with_context(|| format!("writing config to {}", config_path.display()))?;
         Ok(())
     }
+}
+
+// ── Global project registry ──
+// Lives at ~/.booger/projects.json — maps short names to directory paths.
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct ProjectRegistry {
+    pub projects: BTreeMap<String, ProjectEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProjectEntry {
+    pub path: PathBuf,
+}
+
+impl ProjectRegistry {
+    fn registry_path() -> PathBuf {
+        dirs_path().join("projects.json")
+    }
+
+    pub fn load() -> Result<Self> {
+        let path = Self::registry_path();
+        if path.exists() {
+            let contents = std::fs::read_to_string(&path)
+                .with_context(|| format!("reading registry from {}", path.display()))?;
+            serde_json::from_str(&contents)
+                .with_context(|| format!("parsing registry from {}", path.display()))
+        } else {
+            Ok(Self::default())
+        }
+    }
+
+    pub fn save(&self) -> Result<()> {
+        let path = Self::registry_path();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let contents = serde_json::to_string_pretty(self)?;
+        std::fs::write(&path, contents)
+            .with_context(|| format!("writing registry to {}", path.display()))?;
+        Ok(())
+    }
+
+    pub fn add(&mut self, name: String, path: PathBuf) {
+        self.projects.insert(name, ProjectEntry { path });
+    }
+
+    pub fn remove(&mut self, name: &str) -> bool {
+        self.projects.remove(name).is_some()
+    }
+
+    /// Resolve a project name or path to an actual directory.
+    /// Tries: registered project name first, then treats it as a literal path.
+    pub fn resolve(&self, name_or_path: &str) -> Option<PathBuf> {
+        if let Some(entry) = self.projects.get(name_or_path) {
+            Some(entry.path.clone())
+        } else {
+            let p = PathBuf::from(name_or_path);
+            if p.is_dir() {
+                Some(p)
+            } else {
+                None
+            }
+        }
+    }
+}
+
+fn dirs_path() -> PathBuf {
+    dirs_home().join(".booger")
+}
+
+fn dirs_home() -> PathBuf {
+    std::env::var("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."))
 }

@@ -2,10 +2,14 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 
 use super::protocol::{ToolDefinition, ToolResult};
-use crate::config::Config;
+use crate::config::{Config, ProjectRegistry};
 use crate::context;
 use crate::index;
 use crate::search::text::SearchQuery;
+
+fn project_prop() -> Value {
+    json!({ "type": "string", "description": "Registered project name or path (use 'projects' tool to list)" })
+}
 
 pub fn list_tools() -> Vec<ToolDefinition> {
     vec![
@@ -34,6 +38,10 @@ pub fn list_tools() -> Vec<ToolDefinition> {
                     "session_id": {
                         "type": "string",
                         "description": "Session ID for volatile context (focus/visited) awareness"
+                    },
+                    "project": {
+                        "type": "string",
+                        "description": "Registered project name or path (use 'projects' tool to list)"
                     }
                 },
                 "required": ["query"]
@@ -48,7 +56,8 @@ pub fn list_tools() -> Vec<ToolDefinition> {
                     "path": {
                         "type": "string",
                         "description": "Path to directory to index (default: project root)"
-                    }
+                    },
+                    "project": project_prop()
                 }
             }),
         },
@@ -61,7 +70,8 @@ pub fn list_tools() -> Vec<ToolDefinition> {
                     "path": {
                         "type": "string",
                         "description": "Path to indexed directory (default: project root)"
-                    }
+                    },
+                    "project": project_prop()
                 }
             }),
         },
@@ -86,7 +96,8 @@ pub fn list_tools() -> Vec<ToolDefinition> {
                     "ttl_seconds": {
                         "type": "integer",
                         "description": "Time-to-live in seconds (omit for no expiry)"
-                    }
+                    },
+                    "project": project_prop()
                 },
                 "required": ["target", "note"]
             }),
@@ -104,7 +115,8 @@ pub fn list_tools() -> Vec<ToolDefinition> {
                     "session_id": {
                         "type": "string",
                         "description": "Filter by session ID"
-                    }
+                    },
+                    "project": project_prop()
                 }
             }),
         },
@@ -122,7 +134,8 @@ pub fn list_tools() -> Vec<ToolDefinition> {
                     "session_id": {
                         "type": "string",
                         "description": "Session ID"
-                    }
+                    },
+                    "project": project_prop()
                 },
                 "required": ["paths"]
             }),
@@ -141,7 +154,8 @@ pub fn list_tools() -> Vec<ToolDefinition> {
                     "session_id": {
                         "type": "string",
                         "description": "Session ID"
-                    }
+                    },
+                    "project": project_prop()
                 },
                 "required": ["paths"]
             }),
@@ -155,8 +169,17 @@ pub fn list_tools() -> Vec<ToolDefinition> {
                     "session_id": {
                         "type": "string",
                         "description": "Session to clear (omit to clear all)"
-                    }
+                    },
+                    "project": project_prop()
                 }
+            }),
+        },
+        ToolDefinition {
+            name: "projects".into(),
+            description: "List all registered projects. Use project names in the 'project' parameter of other tools to target a specific project.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {}
             }),
         },
     ]
@@ -172,6 +195,7 @@ pub fn call_tool(name: &str, args: &Value, project_root: &PathBuf) -> ToolResult
         "focus" => tool_focus(args, project_root),
         "visit" => tool_visit(args, project_root),
         "forget" => tool_forget(args, project_root),
+        "projects" => tool_projects(),
         _ => ToolResult::error(format!("Unknown tool: {name}")),
     }
 }
@@ -182,7 +206,7 @@ fn tool_search(args: &Value, project_root: &PathBuf) -> ToolResult {
         None => return ToolResult::error("Missing required parameter: query"),
     };
 
-    let root = resolve_path(args.get("path"), project_root);
+    let root = resolve_project(args, project_root);
     let config = Config::load(&root).unwrap_or_default();
 
     let mut search_query = SearchQuery::new(query);
@@ -210,7 +234,7 @@ fn tool_search(args: &Value, project_root: &PathBuf) -> ToolResult {
 }
 
 fn tool_index(args: &Value, project_root: &PathBuf) -> ToolResult {
-    let root = resolve_path(args.get("path"), project_root);
+    let root = resolve_project(args, project_root);
     let config = Config::load(&root).unwrap_or_default();
 
     match index::index_directory(&root, &config) {
@@ -229,7 +253,7 @@ fn tool_index(args: &Value, project_root: &PathBuf) -> ToolResult {
 }
 
 fn tool_status(args: &Value, project_root: &PathBuf) -> ToolResult {
-    let root = resolve_path(args.get("path"), project_root);
+    let root = resolve_project(args, project_root);
     let config = Config::load(&root).unwrap_or_default();
 
     match index::index_status(&root, &config) {
@@ -260,9 +284,10 @@ fn tool_annotate(args: &Value, project_root: &PathBuf) -> ToolResult {
     };
     let session_id = args.get("session_id").and_then(|v| v.as_str());
     let ttl = args.get("ttl_seconds").and_then(|v| v.as_i64());
-    let config = Config::load(project_root).unwrap_or_default();
+    let root = resolve_project(args, project_root);
+    let config = Config::load(&root).unwrap_or_default();
 
-    match context::annotations::add(project_root, &config, target, note, session_id, ttl) {
+    match context::annotations::add(&root, &config, target, note, session_id, ttl) {
         Ok(id) => ToolResult::success(format!("Annotation #{id} added to {target}")),
         Err(e) => ToolResult::error(format!("Failed to annotate: {e}")),
     }
@@ -271,9 +296,10 @@ fn tool_annotate(args: &Value, project_root: &PathBuf) -> ToolResult {
 fn tool_annotations(args: &Value, project_root: &PathBuf) -> ToolResult {
     let target = args.get("target").and_then(|v| v.as_str());
     let session_id = args.get("session_id").and_then(|v| v.as_str());
-    let config = Config::load(project_root).unwrap_or_default();
+    let root = resolve_project(args, project_root);
+    let config = Config::load(&root).unwrap_or_default();
 
-    match context::annotations::list(project_root, &config, target, session_id) {
+    match context::annotations::list(&root, &config, target, session_id) {
         Ok(anns) => match serde_json::to_string_pretty(&anns) {
             Ok(json) => ToolResult::success(json),
             Err(e) => ToolResult::error(format!("Serialization error: {e}")),
@@ -288,9 +314,10 @@ fn tool_focus(args: &Value, project_root: &PathBuf) -> ToolResult {
         None => return ToolResult::error("Missing required parameter: paths"),
     };
     let session_id = args.get("session_id").and_then(|v| v.as_str());
-    let config = Config::load(project_root).unwrap_or_default();
+    let root = resolve_project(args, project_root);
+    let config = Config::load(&root).unwrap_or_default();
 
-    match context::workset::focus(project_root, &config, &paths, session_id) {
+    match context::workset::focus(&root, &config, &paths, session_id) {
         Ok(()) => ToolResult::success(format!("Focused: {}", paths.join(", "))),
         Err(e) => ToolResult::error(format!("Failed to set focus: {e}")),
     }
@@ -302,9 +329,10 @@ fn tool_visit(args: &Value, project_root: &PathBuf) -> ToolResult {
         None => return ToolResult::error("Missing required parameter: paths"),
     };
     let session_id = args.get("session_id").and_then(|v| v.as_str());
-    let config = Config::load(project_root).unwrap_or_default();
+    let root = resolve_project(args, project_root);
+    let config = Config::load(&root).unwrap_or_default();
 
-    match context::workset::visit(project_root, &config, &paths, session_id) {
+    match context::workset::visit(&root, &config, &paths, session_id) {
         Ok(()) => ToolResult::success(format!("Visited: {}", paths.join(", "))),
         Err(e) => ToolResult::error(format!("Failed to mark visited: {e}")),
     }
@@ -312,14 +340,15 @@ fn tool_visit(args: &Value, project_root: &PathBuf) -> ToolResult {
 
 fn tool_forget(args: &Value, project_root: &PathBuf) -> ToolResult {
     let session_id = args.get("session_id").and_then(|v| v.as_str());
-    let config = Config::load(project_root).unwrap_or_default();
+    let root = resolve_project(args, project_root);
+    let config = Config::load(&root).unwrap_or_default();
 
     let anns = context::annotations::clear_session(
-        project_root,
+        &root,
         &config,
         session_id.unwrap_or(""),
     );
-    let ws = context::workset::clear(project_root, &config, session_id);
+    let ws = context::workset::clear(&root, &config, session_id);
 
     match (anns, ws) {
         (Ok(a), Ok(w)) => ToolResult::success(format!("Cleared {a} annotations, {w} workset entries")),
@@ -327,9 +356,40 @@ fn tool_forget(args: &Value, project_root: &PathBuf) -> ToolResult {
     }
 }
 
-fn resolve_path(path_arg: Option<&Value>, project_root: &PathBuf) -> PathBuf {
-    path_arg
+fn tool_projects() -> ToolResult {
+    match ProjectRegistry::load() {
+        Ok(reg) => {
+            if reg.projects.is_empty() {
+                return ToolResult::success("No registered projects. Use the CLI: booger project add <name> <path>");
+            }
+            let list: Vec<_> = reg
+                .projects
+                .iter()
+                .map(|(name, entry)| {
+                    json!({ "name": name, "path": entry.path.to_string_lossy() })
+                })
+                .collect();
+            match serde_json::to_string_pretty(&list) {
+                Ok(json) => ToolResult::success(json),
+                Err(e) => ToolResult::error(format!("Serialization error: {e}")),
+            }
+        }
+        Err(e) => ToolResult::error(format!("Failed to load registry: {e}")),
+    }
+}
+
+/// Resolve the project root from tool arguments.
+/// Priority: 'project' (registry lookup) > 'path' (literal) > default root.
+fn resolve_project(args: &Value, default_root: &PathBuf) -> PathBuf {
+    if let Some(project_name) = args.get("project").and_then(|v| v.as_str()) {
+        if let Ok(reg) = ProjectRegistry::load() {
+            if let Some(path) = reg.resolve(project_name) {
+                return path;
+            }
+        }
+    }
+    args.get("path")
         .and_then(|v| v.as_str())
         .map(PathBuf::from)
-        .unwrap_or_else(|| project_root.clone())
+        .unwrap_or_else(|| default_root.clone())
 }

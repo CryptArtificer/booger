@@ -120,10 +120,32 @@ enum Commands {
     },
     /// Start MCP server (JSON-RPC over stdio, for agent integration)
     Mcp {
-        /// Project root directory
+        /// Default project root directory
         #[arg(default_value = ".")]
         root: String,
     },
+    /// Manage registered projects
+    #[command(subcommand)]
+    Project(ProjectCommands),
+}
+
+#[derive(Subcommand)]
+enum ProjectCommands {
+    /// Register a project by name
+    Add {
+        /// Short name for the project
+        name: String,
+        /// Path to the project directory
+        #[arg(default_value = ".")]
+        path: String,
+    },
+    /// Remove a registered project
+    Remove {
+        /// Project name to remove
+        name: String,
+    },
+    /// List all registered projects
+    List,
 }
 
 fn main() -> Result<()> {
@@ -156,6 +178,7 @@ fn main() -> Result<()> {
         Commands::Forget { root, session } => {
             cmd_forget(&root, session.as_deref())
         }
+        Commands::Project(sub) => cmd_project(sub),
     }
 }
 
@@ -322,6 +345,41 @@ fn cmd_forget(root: &str, session_id: Option<&str>) -> Result<()> {
     )?;
     let ws = booger::context::workset::clear(&root, &config, session_id)?;
     eprintln!("Cleared {anns} annotations, {ws} workset entries");
+    Ok(())
+}
+
+fn cmd_project(sub: ProjectCommands) -> Result<()> {
+    use booger::config::ProjectRegistry;
+    match sub {
+        ProjectCommands::Add { name, path } => {
+            let abs_path = PathBuf::from(&path)
+                .canonicalize()
+                .unwrap_or_else(|_| PathBuf::from(&path));
+            let mut reg = ProjectRegistry::load()?;
+            reg.add(name.clone(), abs_path.clone());
+            reg.save()?;
+            eprintln!("Registered project '{name}' -> {}", abs_path.display());
+        }
+        ProjectCommands::Remove { name } => {
+            let mut reg = ProjectRegistry::load()?;
+            if reg.remove(&name) {
+                reg.save()?;
+                eprintln!("Removed project '{name}'");
+            } else {
+                eprintln!("Project '{name}' not found");
+            }
+        }
+        ProjectCommands::List => {
+            let reg = ProjectRegistry::load()?;
+            if reg.projects.is_empty() {
+                eprintln!("No registered projects.");
+            } else {
+                for (name, entry) in &reg.projects {
+                    println!("  {name}: {}", entry.path.display());
+                }
+            }
+        }
+    }
     Ok(())
 }
 
