@@ -46,23 +46,53 @@ fn chunk_with_treesitter(content: &str, language: Language, lang: &str) -> Optio
     Some(chunks)
 }
 
+const CONTAINER_KINDS: &[&str] = &[
+    "impl", "class", "trait", "module", "interface",
+];
+
 fn collect_chunks(node: Node, source: &[u8], lang: &str, chunks: &mut Vec<ChunkInsert>) {
     let source_str = std::str::from_utf8(source).unwrap_or("");
 
     if let Some((kind, name)) = classify_node(&node, source_str, lang) {
-        let start = node.start_position();
-        let end = node.end_position();
-        let text = &source_str[node.byte_range()];
+        let is_container = CONTAINER_KINDS.iter().any(|k| kind.starts_with(k));
 
-        chunks.push(ChunkInsert {
-            kind,
-            name,
-            content: text.to_string(),
-            start_line: (start.row + 1) as u32,
-            end_line: (end.row + 1) as u32,
-            start_byte: node.start_byte() as u32,
-            end_byte: node.end_byte() as u32,
-        });
+        if is_container {
+            // For containers: emit a signature-only chunk (first few lines)
+            // then recurse to extract child methods/functions individually.
+            let text = &source_str[node.byte_range()];
+            let start = node.start_position();
+            let signature: String = text.lines().take(3).collect::<Vec<_>>().join("\n");
+            let sig_lines = signature.lines().count() as u32;
+
+            chunks.push(ChunkInsert {
+                kind: kind.clone(),
+                name,
+                content: signature,
+                start_line: (start.row + 1) as u32,
+                end_line: (start.row as u32) + sig_lines,
+                start_byte: node.start_byte() as u32,
+                end_byte: (node.start_byte() + sig_lines as usize * 80).min(node.end_byte()) as u32,
+            });
+
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                collect_chunks(child, source, lang, chunks);
+            }
+        } else {
+            let start = node.start_position();
+            let end = node.end_position();
+            let text = &source_str[node.byte_range()];
+
+            chunks.push(ChunkInsert {
+                kind,
+                name,
+                content: text.to_string(),
+                start_line: (start.row + 1) as u32,
+                end_line: (end.row + 1) as u32,
+                start_byte: node.start_byte() as u32,
+                end_byte: node.end_byte() as u32,
+            });
+        }
         return;
     }
 
