@@ -13,7 +13,7 @@ graph TB
     subgraph "booger (14 MB binary)"
         MCP["MCP Server<br/>JSON-RPC over stdio"]
         CLI["CLI<br/>clap"]
-        TOOLS["Tool Dispatch<br/>18 tools"]
+        TOOLS["Tool Dispatch<br/>19 tools"]
         SEARCH["Search Engine"]
         INDEX["Indexer"]
         CTX["Volatile Context"]
@@ -103,6 +103,7 @@ graph LR
         T4[grep]
         T5[references]
         T6[symbols]
+        T19[workspace-search]
     end
 
     subgraph "Indexing"
@@ -129,7 +130,7 @@ graph LR
         T18[projects]
     end
 
-    D --> T1 & T2 & T3 & T4 & T5 & T6
+    D --> T1 & T2 & T3 & T4 & T5 & T6 & T19
     D --> T7 & T8 & T9
     D --> T10 & T11 & T12 & T13 & T14
     D --> T15 & T16 & T17

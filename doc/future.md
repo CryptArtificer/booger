@@ -63,10 +63,10 @@ across conversation boundaries.
 
 ## Longer Term
 
-### Workspace-Level Search
-Search across all registered projects at once, with results tagged by
-project. Useful for monorepo-adjacent setups where related code lives
-in sibling repos.
+### ~~Workspace-Level Search~~ ✅ Shipped
+Implemented as the `workspace-search` MCP tool. Searches all registered
+projects at once, results tagged by project name. Supports all output
+modes, pagination, and kind/language filters.
 
 ### Diff-Aware Search Boost
 If on a branch with changes, automatically boost search results from

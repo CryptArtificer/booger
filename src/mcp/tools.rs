@@ -456,6 +456,49 @@ pub fn list_tools() -> Vec<ToolDefinition> {
             }),
         },
         ToolDefinition {
+            name: "workspace-search".into(),
+            description: "Search across ALL registered projects at once. Results are tagged with the project name. Useful for finding code across multiple repos.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query"
+                    },
+                    "language": {
+                        "type": "string",
+                        "description": "Filter by language"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "description": "Filter by chunk kind: function, struct, import, etc."
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum total results across all projects (default: 20)"
+                    },
+                    "output_mode": {
+                        "type": "string",
+                        "description": "Output mode",
+                        "enum": ["content", "files_with_matches", "signatures", "count"]
+                    },
+                    "head_limit": {
+                        "type": "integer",
+                        "description": "Limit number of results returned"
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Skip first N results"
+                    },
+                    "max_lines": {
+                        "type": "integer",
+                        "description": "Max lines per result in content mode"
+                    }
+                },
+                "required": ["query"]
+            }),
+        },
+        ToolDefinition {
             name: "projects".into(),
             description: "List all registered projects. Use project names in the 'project' parameter of other tools to target a specific project.".into(),
             input_schema: json!({
@@ -485,6 +528,7 @@ pub fn call_tool(name: &str, args: &Value, project_root: &PathBuf) -> ToolResult
         "grep" => tool_grep(args, project_root),
         "references" => tool_references(args, project_root),
         "hybrid-search" => tool_hybrid_search(args, project_root),
+        "workspace-search" => tool_workspace_search(args, project_root),
         "projects" => tool_projects(),
         _ => ToolResult::error(format!("Unknown tool: {name}")),
     }
@@ -1359,6 +1403,137 @@ fn tool_hybrid_search(args: &Value, project_root: &PathBuf) -> ToolResult {
     let anns = load_annotations(&root, &config);
     let opts = FormatOpts { output_mode: &output_mode, offset, head_limit, max_lines, annotations: &anns };
     ToolResult::success(format_results(&results, &opts))
+}
+
+fn tool_workspace_search(args: &Value, default_root: &PathBuf) -> ToolResult {
+    let query = match args.get("query").and_then(|v| v.as_str()) {
+        Some(q) => q,
+        None => return ToolResult::error("Missing required parameter: query"),
+    };
+
+    let reg = match ProjectRegistry::load() {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(format!("Failed to load project registry: {e}")),
+    };
+
+    let mut projects: Vec<(String, std::path::PathBuf)> = reg.projects.iter()
+        .map(|(name, entry)| (name.clone(), entry.path.clone()))
+        .collect();
+
+    // Also include the default root as "default" if not already registered
+    let default_canon = default_root.canonicalize().unwrap_or_else(|_| default_root.clone());
+    if !projects.iter().any(|(_, p)| p.canonicalize().unwrap_or_else(|_| p.clone()) == default_canon) {
+        projects.push(("(default)".into(), default_root.clone()));
+    }
+
+    if projects.is_empty() {
+        return ToolResult::success("No projects registered. Use 'booger project add <name> <path>' to register projects.");
+    }
+
+    let max_results = args.get("max_results").and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(20);
+    let language = args.get("language").and_then(|v| v.as_str()).map(String::from);
+    let kind = args.get("kind").and_then(|v| v.as_str()).map(String::from);
+    let (output_mode, offset, head_limit, max_lines) = parse_format_opts(args, "content");
+
+    let per_project = (max_results * 2 / projects.len()).max(5);
+
+    type SR = crate::store::sqlite::SearchResult;
+    let mut all_results: Vec<(String, SR)> = Vec::new();
+
+    for (name, path) in &projects {
+        let config = Config::load(path).unwrap_or_default();
+        let mut search_query = SearchQuery::new(query);
+        search_query.language = language.clone();
+        search_query.kind = kind.clone();
+        search_query.max_results = per_project;
+
+        if let Ok(results) = crate::search::text::search(path, &config, &search_query) {
+            for r in results {
+                all_results.push((name.clone(), r));
+            }
+        }
+    }
+
+    if all_results.is_empty() {
+        return ToolResult::success(format!(
+            "No results found across {} project(s).",
+            projects.len()
+        ));
+    }
+
+    // Sort by rank (FTS5 rank is negative, more negative = better)
+    all_results.sort_by(|a, b| a.1.rank.partial_cmp(&b.1.rank).unwrap_or(std::cmp::Ordering::Equal));
+    all_results.truncate(max_results);
+
+    let total = all_results.len();
+    let page = if offset >= total {
+        &[][..]
+    } else {
+        let end = head_limit.map_or(total, |l| (offset + l).min(total));
+        &all_results[offset..end]
+    };
+
+    match output_mode.as_str() {
+        "count" => {
+            let mut counts: Vec<(String, usize)> = Vec::new();
+            for (name, _) in &all_results {
+                if let Some(entry) = counts.iter_mut().find(|(n, _)| n == name) {
+                    entry.1 += 1;
+                } else {
+                    counts.push((name.clone(), 1));
+                }
+            }
+            let mut out = format!("{total} result(s) across {} project(s)\n", counts.len());
+            for (name, count) in &counts {
+                out.push_str(&format!("  {name}: {count}\n"));
+            }
+            ToolResult::success(out)
+        }
+        "files_with_matches" => {
+            let mut out = format!("{total} result(s)\n");
+            for (name, r) in page {
+                out.push_str(&format!(
+                    "[{}] {}:{}:{} [{}]\n",
+                    name, r.file_path, r.start_line, r.end_line, r.chunk_kind,
+                ));
+            }
+            ToolResult::success(out)
+        }
+        "signatures" => {
+            let mut out = format!("{total} result(s)\n");
+            for (name, r) in page {
+                let sig = r.signature.as_deref()
+                    .unwrap_or_else(|| r.content.lines().next().unwrap_or(""));
+                out.push_str(&format!(
+                    "[{}] {}:{} [{}] {}\n",
+                    name, r.file_path, r.start_line, r.chunk_kind, sig,
+                ));
+            }
+            ToolResult::success(out)
+        }
+        _ => {
+            let mut out = format!("{total} result(s)\n");
+            for (i, (name, r)) in page.iter().enumerate() {
+                let rname = r.chunk_name.as_deref().unwrap_or("");
+                let name_display = if rname.is_empty() { String::new() } else { format!(" ({rname})") };
+                out.push_str(&format!(
+                    "\n── [{}] [{}] {}:{}-{} [{}{}] ──\n",
+                    offset + i, name, r.file_path, r.start_line, r.end_line, r.chunk_kind, name_display,
+                ));
+                let lines: Vec<&str> = r.content.lines().collect();
+                let limit = max_lines.unwrap_or(lines.len());
+                let shown = limit.min(lines.len());
+                for (j, line) in lines[..shown].iter().enumerate() {
+                    let line_no = r.start_line as usize + j;
+                    out.push_str(&format!("{line_no:>6}|{line}\n"));
+                }
+                if shown < lines.len() {
+                    out.push_str(&format!("  ... ({} more lines)\n", lines.len() - shown));
+                }
+            }
+            ToolResult::success(out)
+        }
+    }
 }
 
 fn tool_projects() -> ToolResult {

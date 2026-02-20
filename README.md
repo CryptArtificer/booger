@@ -139,6 +139,7 @@ still require a session restart for the client to discover them.
 | `hybrid-search` | Combined FTS + semantic search with tunable alpha weighting |
 | `references` | Find all usages of a symbol: definitions, call sites, type references, imports |
 | `search` | Full-text search with [BM25](https://en.wikipedia.org/wiki/Okapi_BM25) ranking, volatile context re-ranking, kind/language/path filters |
+| `workspace-search` | Search across **all** registered projects at once — results tagged by project name |
 | `semantic-search` | Similarity search via local embeddings (requires [Ollama](https://ollama.ai/)) |
 | `symbols` | List all symbols in a file/directory — structural outline with smart signatures |
 | | |
@@ -209,6 +210,12 @@ function the usage lives in.
 `hybrid-search` runs both FTS and semantic search, normalizes scores
 to [0,1], and merges with configurable alpha (default 0.7 FTS / 0.3
 semantic). Degrades gracefully when embeddings aren't available.
+
+### Workspace Search
+
+`workspace-search` queries **all registered projects** in one call. Results
+are tagged with the project name and ranked globally. Supports all the same
+output modes, pagination, and filters as `search`.
 
 Read-only operations (`status`, `search`, `annotations`, `forget`) never
 create a `.booger/` directory as a side effect.
