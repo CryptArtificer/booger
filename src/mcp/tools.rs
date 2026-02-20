@@ -368,6 +368,94 @@ pub fn list_tools() -> Vec<ToolDefinition> {
             }),
         },
         ToolDefinition {
+            name: "references".into(),
+            description: "Find all usages of a symbol: definitions, call sites, type references, and imports. Structural — not just text grep. Returns categorized results.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "The symbol name to find references for"
+                    },
+                    "path_prefix": {
+                        "type": "string",
+                        "description": "Filter to files under this path"
+                    },
+                    "output_mode": {
+                        "type": "string",
+                        "description": "Output mode: 'content' shows matching lines (default), 'files_with_matches' shows file paths, 'count' shows counts",
+                        "enum": ["content", "files_with_matches", "count"]
+                    },
+                    "head_limit": {
+                        "type": "integer",
+                        "description": "Limit number of results returned"
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Skip first N results (for pagination)"
+                    },
+                    "project": project_prop()
+                },
+                "required": ["symbol"]
+            }),
+        },
+        ToolDefinition {
+            name: "hybrid-search".into(),
+            description: "Combined FTS + semantic search. Merges keyword matches and meaning-based matches into a single ranked result set. Requires embeddings (run 'embed' first).".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query (searched by both keyword and meaning)"
+                    },
+                    "language": {
+                        "type": "string",
+                        "description": "Filter by language"
+                    },
+                    "path_prefix": {
+                        "type": "string",
+                        "description": "Filter results to files under this path prefix"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "description": "Filter by chunk kind: function, struct, import, raw, etc."
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of results (default: 20)"
+                    },
+                    "alpha": {
+                        "type": "number",
+                        "description": "Weight for FTS vs semantic (0.0 = pure semantic, 1.0 = pure FTS, default: 0.7)"
+                    },
+                    "output_mode": {
+                        "type": "string",
+                        "description": "Output mode",
+                        "enum": ["content", "files_with_matches", "signatures", "count"]
+                    },
+                    "head_limit": {
+                        "type": "integer",
+                        "description": "Limit number of results returned"
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Skip first N results"
+                    },
+                    "max_lines": {
+                        "type": "integer",
+                        "description": "Max lines per result in content mode"
+                    },
+                    "session_id": {
+                        "type": "string",
+                        "description": "Session ID for volatile context"
+                    },
+                    "project": project_prop()
+                },
+                "required": ["query"]
+            }),
+        },
+        ToolDefinition {
             name: "projects".into(),
             description: "List all registered projects. Use project names in the 'project' parameter of other tools to target a specific project.".into(),
             input_schema: json!({
@@ -395,6 +483,8 @@ pub fn call_tool(name: &str, args: &Value, project_root: &PathBuf) -> ToolResult
         "changelog" => tool_changelog(args, project_root),
         "symbols" => tool_symbols(args, project_root),
         "grep" => tool_grep(args, project_root),
+        "references" => tool_references(args, project_root),
+        "hybrid-search" => tool_hybrid_search(args, project_root),
         "projects" => tool_projects(),
         _ => ToolResult::error(format!("Unknown tool: {name}")),
     }
@@ -405,6 +495,11 @@ struct FormatOpts<'a> {
     offset: usize,
     head_limit: Option<usize>,
     max_lines: Option<usize>,
+    annotations: &'a [crate::store::sqlite::Annotation],
+}
+
+fn load_annotations(root: &std::path::Path, config: &Config) -> Vec<crate::store::sqlite::Annotation> {
+    context::annotations::list(root, config, None, None).unwrap_or_default()
 }
 
 fn parse_format_opts(args: &Value, default_mode: &str) -> (String, usize, Option<usize>, Option<usize>) {
@@ -413,6 +508,33 @@ fn parse_format_opts(args: &Value, default_mode: &str) -> (String, usize, Option
     let head_limit = args.get("head_limit").and_then(|v| v.as_u64()).map(|n| n as usize);
     let max_lines = args.get("max_lines").and_then(|v| v.as_u64()).map(|n| n as usize);
     (output_mode, offset, head_limit, max_lines)
+}
+
+fn matching_notes(r: &crate::store::sqlite::SearchResult, annotations: &[crate::store::sqlite::Annotation]) -> Vec<String> {
+    if annotations.is_empty() {
+        return Vec::new();
+    }
+    let mut notes = Vec::new();
+    for ann in annotations {
+        let t = &ann.target;
+        if r.file_path.ends_with(t)
+            || r.file_path == *t
+            || r.chunk_name.as_deref() == Some(t.as_str())
+        {
+            notes.push(ann.note.clone());
+            continue;
+        }
+        if let Some((file, line_str)) = t.split_once(':') {
+            if let Ok(line) = line_str.parse::<i64>() {
+                if (r.file_path.ends_with(file) || r.file_path == *file)
+                    && line >= r.start_line && line <= r.end_line
+                {
+                    notes.push(ann.note.clone());
+                }
+            }
+        }
+    }
+    notes
 }
 
 fn format_results(results: &[crate::store::sqlite::SearchResult], opts: &FormatOpts) -> String {
@@ -460,6 +582,9 @@ fn format_results(results: &[crate::store::sqlite::SearchResult], opts: &FormatO
                     "{}:{} [{}] {}\n",
                     r.file_path, r.start_line, r.chunk_kind, sig,
                 ));
+                for note in matching_notes(r, opts.annotations) {
+                    out.push_str(&format!("  [note] {note}\n"));
+                }
             }
             out
         }
@@ -480,6 +605,9 @@ fn format_results(results: &[crate::store::sqlite::SearchResult], opts: &FormatO
                     "\n── [{}] {}:{}-{} [{}{}] ──\n",
                     offset + i, r.file_path, r.start_line, r.end_line, r.chunk_kind, name_display,
                 ));
+                for note in matching_notes(r, opts.annotations) {
+                    out.push_str(&format!("  [note] {note}\n"));
+                }
                 let lines: Vec<&str> = r.content.lines().collect();
                 let limit = max_lines.unwrap_or(lines.len());
                 let shown = limit.min(lines.len());
@@ -521,7 +649,8 @@ fn tool_search(args: &Value, project_root: &PathBuf) -> ToolResult {
     search_query.kind = args.get("kind").and_then(|v| v.as_str()).map(String::from);
 
     let (output_mode, offset, head_limit, max_lines) = parse_format_opts(args, "content");
-    let opts = FormatOpts { output_mode: &output_mode, offset, head_limit, max_lines };
+    let anns = load_annotations(&root, &config);
+    let opts = FormatOpts { output_mode: &output_mode, offset, head_limit, max_lines, annotations: &anns };
 
     match crate::search::text::search(&root, &config, &search_query) {
         Ok(results) => {
@@ -774,7 +903,8 @@ fn tool_semantic_search(args: &Value, project_root: &PathBuf) -> ToolResult {
     search_query.max_results = args.get("max_results").and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(20);
 
     let (output_mode, offset, head_limit, max_lines) = parse_format_opts(args, "content");
-    let opts = FormatOpts { output_mode: &output_mode, offset, head_limit, max_lines };
+    let anns = load_annotations(&root, &config);
+    let opts = FormatOpts { output_mode: &output_mode, offset, head_limit, max_lines, annotations: &anns };
 
     match crate::search::semantic::search(&root, &config, &embedder, &search_query) {
         Ok(results) => {
@@ -851,7 +981,8 @@ fn tool_symbols(args: &Value, project_root: &PathBuf) -> ToolResult {
     let path_prefix = args.get("path_prefix").and_then(|v| v.as_str());
     let kind = args.get("kind").and_then(|v| v.as_str());
     let (output_mode, offset, head_limit, max_lines) = parse_format_opts(args, "signatures");
-    let opts = FormatOpts { output_mode: &output_mode, offset, head_limit, max_lines };
+    let anns = load_annotations(&root, &config);
+    let opts = FormatOpts { output_mode: &output_mode, offset, head_limit, max_lines, annotations: &anns };
 
     match store.list_symbols(path_prefix, kind) {
         Ok(results) => {
@@ -967,6 +1098,267 @@ fn tool_grep(args: &Value, project_root: &PathBuf) -> ToolResult {
             ToolResult::success(out)
         }
     }
+}
+
+fn tool_references(args: &Value, project_root: &PathBuf) -> ToolResult {
+    let symbol = match args.get("symbol").and_then(|v| v.as_str()) {
+        Some(s) => s,
+        None => return ToolResult::error("Missing required parameter: symbol"),
+    };
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
+    let config = Config::load(&root).unwrap_or_default();
+
+    // Trigger incremental index via a dummy search to ensure freshness
+    let _ = crate::search::text::search(&root, &config, &SearchQuery::new(symbol));
+
+    let storage_dir = config.storage_dir(
+        &root.canonicalize().unwrap_or_else(|_| root.clone()),
+    );
+    let store = match Store::open_if_exists(&storage_dir) {
+        Ok(Some(s)) => s,
+        Ok(None) => return ToolResult::success("No index found. Run 'index' first."),
+        Err(e) => return ToolResult::error(format!("Failed to open store: {e}")),
+    };
+
+    let path_prefix = args.get("path_prefix").and_then(|v| v.as_str());
+    let (output_mode, offset, head_limit, _) = parse_format_opts(args, "content");
+
+    let all_chunks = match store.all_chunks(path_prefix, None) {
+        Ok(c) => c,
+        Err(e) => return ToolResult::error(format!("Failed to load chunks: {e}")),
+    };
+
+    let pattern = match regex::Regex::new(&format!(r"\b{}\b", regex::escape(symbol))) {
+        Ok(p) => p,
+        Err(e) => return ToolResult::error(format!("Invalid symbol pattern: {e}")),
+    };
+
+    struct Ref {
+        file_path: String,
+        line_no: usize,
+        line: String,
+        chunk_kind: String,
+        chunk_name: Option<String>,
+        ref_kind: &'static str,
+    }
+
+    let mut definitions: Vec<Ref> = Vec::new();
+    let mut references: Vec<Ref> = Vec::new();
+
+    for chunk in &all_chunks {
+        let is_definition = chunk.chunk_name.as_deref() == Some(symbol);
+
+        if is_definition {
+            definitions.push(Ref {
+                file_path: chunk.file_path.clone(),
+                line_no: chunk.start_line as usize,
+                line: chunk.signature.as_deref()
+                    .or_else(|| chunk.content.lines().next())
+                    .unwrap_or("").to_string(),
+                chunk_kind: chunk.chunk_kind.clone(),
+                chunk_name: chunk.chunk_name.clone(),
+                ref_kind: "definition",
+            });
+        } else {
+            for (i, line) in chunk.content.lines().enumerate() {
+                if pattern.is_match(line) {
+                    let line_no = chunk.start_line as usize + i;
+                    let trimmed = line.trim();
+
+                    let ref_kind = if chunk.chunk_kind == "import" {
+                        "import"
+                    } else if trimmed.contains(&format!("{symbol}("))
+                            || trimmed.contains(&format!("{symbol}!(")) {
+                        "call"
+                    } else if trimmed.contains(&format!("<{symbol}>"))
+                            || trimmed.contains(&format!(": {symbol}"))
+                            || trimmed.contains(&format!("-> {symbol}")) {
+                        "type"
+                    } else {
+                        "reference"
+                    };
+
+                    references.push(Ref {
+                        file_path: chunk.file_path.clone(),
+                        line_no,
+                        line: trimmed.to_string(),
+                        chunk_kind: chunk.chunk_kind.clone(),
+                        chunk_name: chunk.chunk_name.clone(),
+                        ref_kind,
+                    });
+                }
+            }
+        }
+    }
+
+    let total_defs = definitions.len();
+    let total_refs = references.len();
+
+    if total_defs == 0 && total_refs == 0 {
+        return ToolResult::success(format!("No references found for '{symbol}'."));
+    }
+
+    match output_mode.as_str() {
+        "count" => {
+            ToolResult::success(format!("{total_defs} definition(s), {total_refs} reference(s)"))
+        }
+        "files_with_matches" => {
+            let mut files: Vec<String> = Vec::new();
+            for r in definitions.iter().chain(references.iter()) {
+                if !files.contains(&r.file_path) {
+                    files.push(r.file_path.clone());
+                }
+            }
+            let total = files.len();
+            let page = if offset >= total {
+                &[][..]
+            } else {
+                let end = head_limit.map_or(total, |l| (offset + l).min(total));
+                &files[offset..end]
+            };
+            let mut out = format!("{total} file(s) referencing '{symbol}'\n");
+            for f in page {
+                out.push_str(&format!("{f}\n"));
+            }
+            ToolResult::success(out)
+        }
+        _ => {
+            let mut all: Vec<&Ref> = definitions.iter().chain(references.iter()).collect();
+            all.sort_by(|a, b| a.file_path.cmp(&b.file_path).then(a.line_no.cmp(&b.line_no)));
+
+            let total = all.len();
+            let page = if offset >= total {
+                &[][..]
+            } else {
+                let end = head_limit.map_or(total, |l| (offset + l).min(total));
+                &all[offset..end]
+            };
+
+            let mut out = format!("{total_defs} definition(s), {total_refs} reference(s)\n");
+            for r in page {
+                let in_fn = r.chunk_name.as_deref().unwrap_or("");
+                out.push_str(&format!(
+                    "{}:{} [{}] in {} ({}) {}\n",
+                    r.file_path, r.line_no, r.ref_kind, r.chunk_kind, in_fn, r.line,
+                ));
+            }
+            ToolResult::success(out)
+        }
+    }
+}
+
+fn tool_hybrid_search(args: &Value, project_root: &PathBuf) -> ToolResult {
+    let query = match args.get("query").and_then(|v| v.as_str()) {
+        Some(q) => q,
+        None => return ToolResult::error("Missing required parameter: query"),
+    };
+
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
+    let config = Config::load(&root).unwrap_or_default();
+
+    let alpha = args.get("alpha").and_then(|v| v.as_f64()).unwrap_or(0.7);
+    let max_results = args.get("max_results").and_then(|v| v.as_u64()).map(|n| n as usize).unwrap_or(20);
+    let language = args.get("language").and_then(|v| v.as_str()).map(String::from);
+    let path_prefix = args.get("path_prefix").and_then(|v| v.as_str()).map(String::from);
+    let kind = args.get("kind").and_then(|v| v.as_str()).map(String::from);
+    let session_id = args.get("session_id").and_then(|v| v.as_str()).map(String::from);
+
+    // FTS search
+    let mut fts_query = SearchQuery::new(query);
+    fts_query.language = language.clone();
+    fts_query.path_prefix = path_prefix.clone();
+    fts_query.kind = kind.clone();
+    fts_query.max_results = max_results * 2;
+    fts_query.session_id = session_id;
+
+    let fts_results = crate::search::text::search(&root, &config, &fts_query)
+        .unwrap_or_default();
+
+    // Semantic search
+    let embedder = crate::embed::ollama::OllamaEmbedder::default();
+    let sem_results = if let Ok(embedder) = embedder {
+        let mut sem_query = crate::search::semantic::SemanticQuery::new(query);
+        sem_query.language = language;
+        sem_query.path_prefix = path_prefix;
+        sem_query.max_results = max_results * 2;
+        crate::search::semantic::search(&root, &config, &embedder, &sem_query)
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    if fts_results.is_empty() && sem_results.is_empty() {
+        return ToolResult::success("No results found.");
+    }
+
+    // Normalize and merge
+    use std::collections::HashMap;
+    type SR = crate::store::sqlite::SearchResult;
+
+    let fts_max = fts_results.iter().map(|r| r.rank.abs()).fold(0.0_f64, f64::max).max(1.0);
+    let sem_max = sem_results.iter().map(|r| r.rank).fold(0.0_f64, f64::max).max(1.0);
+
+    // Key: (file_path, start_line)
+    let mut merged: HashMap<(String, i64), SR> = HashMap::new();
+    let mut scores: HashMap<(String, i64), f64> = HashMap::new();
+
+    for r in &fts_results {
+        let key = (r.file_path.clone(), r.start_line);
+        let norm_score = 1.0 - (r.rank.abs() / fts_max);
+        let weighted = alpha * norm_score;
+        scores.entry(key.clone())
+            .and_modify(|s| *s = s.max(weighted))
+            .or_insert(weighted);
+        merged.entry(key).or_insert_with(|| SR {
+            file_path: r.file_path.clone(),
+            language: r.language.clone(),
+            chunk_kind: r.chunk_kind.clone(),
+            chunk_name: r.chunk_name.clone(),
+            signature: r.signature.clone(),
+            start_line: r.start_line,
+            end_line: r.end_line,
+            content: r.content.clone(),
+            rank: 0.0,
+        });
+    }
+
+    for r in &sem_results {
+        let key = (r.file_path.clone(), r.start_line);
+        let norm_score = r.rank / sem_max;
+        let weighted = (1.0 - alpha) * norm_score;
+        scores.entry(key.clone())
+            .and_modify(|s| *s += weighted)
+            .or_insert(weighted);
+        merged.entry(key).or_insert_with(|| SR {
+            file_path: r.file_path.clone(),
+            language: r.language.clone(),
+            chunk_kind: r.chunk_kind.clone(),
+            chunk_name: r.chunk_name.clone(),
+            signature: r.signature.clone(),
+            start_line: r.start_line,
+            end_line: r.end_line,
+            content: r.content.clone(),
+            rank: 0.0,
+        });
+    }
+
+    let mut results: Vec<SR> = merged.into_iter().map(|(key, mut sr)| {
+        sr.rank = *scores.get(&key).unwrap_or(&0.0);
+        sr
+    }).collect();
+    results.sort_by(|a, b| b.rank.partial_cmp(&a.rank).unwrap_or(std::cmp::Ordering::Equal));
+    results.truncate(max_results);
+
+    let (output_mode, offset, head_limit, max_lines) = parse_format_opts(args, "content");
+    let anns = load_annotations(&root, &config);
+    let opts = FormatOpts { output_mode: &output_mode, offset, head_limit, max_lines, annotations: &anns };
+    ToolResult::success(format_results(&results, &opts))
 }
 
 fn tool_projects() -> ToolResult {
