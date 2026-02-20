@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use std::path::Path;
 
 use crate::config::Config;
+use crate::index;
 use crate::store::sqlite::{SearchResult, Store};
 
 pub struct SearchQuery {
@@ -26,10 +27,16 @@ impl SearchQuery {
 
 /// Execute a full-text search against the index, applying volatile context
 /// (focus boost, visited penalty) to re-rank results.
+/// Automatically ensures the index is up-to-date before searching.
 pub fn search(root: &Path, config: &Config, query: &SearchQuery) -> Result<Vec<SearchResult>> {
     let root = root
         .canonicalize()
         .with_context(|| format!("resolving path {}", root.display()))?;
+
+    // Auto-index: incrementally update before searching so results are never stale.
+    // This is cheap when nothing changed (walk + hash comparison only).
+    let _ = index::index_directory(&root, config);
+
     let storage_dir = config.storage_dir(&root);
     let store = Store::open(&storage_dir)?;
 
