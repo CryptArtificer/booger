@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "booger": {
-      "command": "/Users/johjoh/Dev/tools/booger/target/release/booger",
+      "command": "booger",
       "args": ["mcp", "/Users/johjoh/Dev/tools/booger"]
     }
   }
