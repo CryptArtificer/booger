@@ -668,10 +668,11 @@ fn tool_forget(args: &Value, project_root: &PathBuf) -> ToolResult {
 
 fn tool_branch_diff(args: &Value, project_root: &PathBuf) -> ToolResult {
     let root = resolve_project(args, project_root);
+    let detected = crate::git::diff::default_branch(&root);
     let base = args
         .get("base")
         .and_then(|v| v.as_str())
-        .unwrap_or("main");
+        .unwrap_or(&detected);
 
     match crate::git::diff::branch_diff(&root, base) {
         Ok(diff) => {
@@ -744,6 +745,17 @@ fn tool_semantic_search(args: &Value, project_root: &PathBuf) -> ToolResult {
     match crate::search::semantic::search(&root, &config, &embedder, &search_query) {
         Ok(results) => {
             if results.is_empty() {
+                let storage_dir = config.storage_dir(
+                    &root.canonicalize().unwrap_or_else(|_| root.clone()),
+                );
+                let has_embeddings = Store::open_if_exists(&storage_dir)
+                    .ok()
+                    .flatten()
+                    .and_then(|s| s.embedding_count().ok())
+                    .unwrap_or(0) > 0;
+                if has_embeddings {
+                    return ToolResult::success("No results found.");
+                }
                 return ToolResult::success("No results. Run 'embed' tool first to generate embeddings.");
             }
             ToolResult::success(format_results(&results, &opts))
@@ -765,10 +777,11 @@ fn tool_draft_commit(args: &Value, project_root: &PathBuf) -> ToolResult {
 
 fn tool_changelog(args: &Value, project_root: &PathBuf) -> ToolResult {
     let root = resolve_project(args, project_root);
+    let detected = crate::git::diff::default_branch(&root);
     let base = args
         .get("base")
         .and_then(|v| v.as_str())
-        .unwrap_or("main");
+        .unwrap_or(&detected);
 
     match crate::git::diff::branch_diff(&root, base) {
         Ok(diff) => {

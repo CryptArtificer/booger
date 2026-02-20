@@ -51,6 +51,10 @@ fn dispatch(request: &JsonRpcRequest, project_root: &PathBuf) -> Option<JsonRpcR
         "tools/call" => Some(handle_tools_call(request, project_root)),
         "resources/list" => Some(handle_resources_list(request, project_root)),
         "resources/read" => Some(handle_resources_read(request, project_root)),
+        "resources/templates/list" => Some(JsonRpcResponse::success(
+            request.id.clone(),
+            json!({ "resourceTemplates": [] }),
+        )),
         _ if request.id.is_none() => None, // ignore unknown notifications
         _ => Some(JsonRpcResponse::error(
             request.id.clone(),

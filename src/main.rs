@@ -148,9 +148,8 @@ enum Commands {
     },
     /// Show structural diff between current branch and a base ref
     BranchDiff {
-        /// Base branch or commit to compare against (e.g. main, origin/main)
-        #[arg(default_value = "main")]
-        base: String,
+        /// Base branch or commit to compare against (auto-detects if omitted)
+        base: Option<String>,
         /// Project root
         #[arg(short, long, default_value = ".")]
         root: String,
@@ -172,9 +171,8 @@ enum Commands {
     },
     /// Generate a structural changelog between current state and a base ref
     Changelog {
-        /// Base branch or commit to compare against
-        #[arg(default_value = "main")]
-        base: String,
+        /// Base branch or commit to compare against (auto-detects if omitted)
+        base: Option<String>,
         /// Project root
         #[arg(short, long, default_value = ".")]
         root: String,
@@ -226,10 +224,14 @@ fn main() -> Result<()> {
             cmd_embed(&path, &model, &url)
         }
         Commands::BranchDiff { base, root, json, focus, session } => {
+            let base = base.unwrap_or_else(|| booger::git::diff::default_branch(std::path::Path::new(&root)));
             cmd_branch_diff(&root, &base, json, focus, session.as_deref())
         }
         Commands::DraftCommit { root } => cmd_draft_commit(&root),
-        Commands::Changelog { base, root } => cmd_changelog(&root, &base),
+        Commands::Changelog { base, root } => {
+            let base = base.unwrap_or_else(|| booger::git::diff::default_branch(std::path::Path::new(&root)));
+            cmd_changelog(&root, &base)
+        }
         Commands::Mcp { root } => cmd_mcp(&root),
         Commands::Annotate { target, note, root, session, ttl } => {
             cmd_annotate(&root, &target, &note, session.as_deref(), ttl)

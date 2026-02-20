@@ -289,6 +289,37 @@ fn diff_chunks(
     (added, removed, modified)
 }
 
+/// Detect the default branch name by checking what origin/HEAD points to,
+/// then falling back to checking if main or master exists locally.
+pub fn default_branch(root: &Path) -> String {
+    // Try origin/HEAD → refs/remotes/origin/main (or master)
+    if let Ok(output) = Command::new("git")
+        .args(["symbolic-ref", "refs/remotes/origin/HEAD"])
+        .current_dir(root)
+        .output()
+    {
+        let s = String::from_utf8_lossy(&output.stdout);
+        if let Some(branch) = s.trim().strip_prefix("refs/remotes/origin/") {
+            return branch.to_string();
+        }
+    }
+
+    // Fallback: check which of main/master exists
+    for candidate in &["main", "master"] {
+        if Command::new("git")
+            .args(["rev-parse", "--verify", candidate])
+            .current_dir(root)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+        {
+            return candidate.to_string();
+        }
+    }
+
+    "main".to_string()
+}
+
 fn ensure_git_repo(root: &Path) -> Result<()> {
     let output = Command::new("git")
         .args(["rev-parse", "--git-dir"])
