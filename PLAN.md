@@ -89,6 +89,18 @@ memory.
 - [ ] Performance tuning (large repos: 100k+ files)
 - [ ] Comprehensive error handling and logging
 
+### M8 — Cloud Deployment
+- [ ] HTTP/gRPC API server mode (`booger serve`) for remote access
+- [ ] AWS deployment: Lambda + API Gateway for serverless, or ECS/Fargate for persistent
+- [ ] S3-backed storage adapter (index DB + embeddings)
+- [ ] SQS/EventBridge for async indexing jobs (large repos)
+- [ ] IAM-based auth for multi-tenant access
+- [ ] CloudFormation / CDK template for one-click deploy
+- [ ] Provider abstraction layer: trait-based storage/queue/auth backends
+- [ ] Azure extension: Blob Storage + Azure Functions
+- [ ] GCP extension: Cloud Storage + Cloud Run
+- [ ] Terraform modules as alternative to provider-native IaC
+
 ## Key Design Decisions
 
 1. **Rust** — performance matters for indexing large repos; also good for
@@ -109,6 +121,10 @@ memory.
 
 6. **MCP-first API** — designed for agent consumption. CLI is a thin
    wrapper over the same core.
+
+7. **Cloud-ready architecture** — core logic is storage-agnostic via traits.
+   Local uses SQLite + filesystem, cloud swaps in S3 + managed DB. AWS is
+   the primary target; other providers via the same trait abstraction.
 
 ## Module Structure (planned)
 
@@ -153,6 +169,5 @@ src/
 ## Non-Goals (for now)
 
 - Web UI
-- Multi-user / auth
 - Real-time collaboration
 - Replacing LSP (we complement it, not replace it)
