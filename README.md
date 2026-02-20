@@ -34,6 +34,48 @@ Searching auto-indexes: if the index is missing or stale, booger
 incrementally updates it before returning results. You never need
 to manually run `booger index`.
 
+## Git Integration
+
+Booger understands git. It uses tree-sitter to structurally diff
+branches — not lines, but symbols.
+
+```bash
+# What changed on this branch vs main?
+booger branch-diff main
+# Output:
+# [~] src/store/sqlite.rs
+#     + function open_if_exists (99:108)
+#     ~ function search (206:270)
+#     - function old_helper (50:55)
+
+# Auto-generated commit message from staged/unstaged changes
+booger draft-commit
+# Output:
+# Add open_if_exists, update search in src/store
+#
+# [~] src/store/sqlite.rs
+#   + function open_if_exists
+#   ~ function search
+
+# Markdown changelog for a PR description
+booger changelog main
+
+# Auto-focus changed files so search prioritizes them
+booger branch-diff main --focus
+```
+
+`branch-diff` compares chunk sets between git refs — each file is
+parsed with tree-sitter at both versions and symbols are matched by
+(kind, name). Renames appear as remove + add. Uses `-z` and
+`--no-renames` for robust path handling.
+
+`draft-commit` diffs staged changes vs HEAD (falls back to unstaged).
+The output is a ready-to-use commit message with a summary line and
+per-file structural breakdown.
+
+`changelog` generates grouped markdown: Added, Modified, Removed,
+Dependency changes, New/Deleted files.
+
 ## Multi-Project
 
 Register projects by name for easy access:
@@ -101,6 +143,9 @@ so rebuilding and installing picks up changes instantly.
 | `focus` | Boost search results for specific paths |
 | `visit` | Deprioritize already-seen paths in search |
 | `forget` | Clear volatile context |
+| `branch-diff` | Structural diff between branches (added/modified/removed symbols) |
+| `draft-commit` | Generate commit message from staged/unstaged changes |
+| `changelog` | Generate markdown changelog from branch diff |
 | `projects` | List registered projects |
 
 All tools accept an optional `project` parameter — a registered project
@@ -158,12 +203,17 @@ booger forget
 
 ## Supported Languages
 
-Tree-sitter structural chunking (functions, structs, classes, methods):
+Tree-sitter structural chunking (functions, structs, classes, methods, imports):
 
 Rust, Python, JavaScript, TypeScript, TSX, Go, C
 
 Container blocks (impl, class, trait, interface) are decomposed into
 individual method chunks plus a signature-only chunk for the container.
+
+Import/use statements are indexed individually, so searching for a
+dependency name (e.g. `"anyhow Context"`) finds every file that imports
+it. Covers `use` (Rust), `import`/`from` (Python), `import`/`require()`
+(JS/TS), `import` (Go), `#include` (C).
 
 All other file types are indexed as whole-file chunks and are still
 searchable via FTS5.
@@ -204,6 +254,7 @@ Files on disk
   → index (walk + hash + tree-sitter parse → SQLite + FTS5)
   → search (FTS5 query → BM25 → code boost → context re-rank)
   → volatile context (annotations, focus, visited — session-scoped)
+  → git integration (branch-diff → draft-commit / changelog)
   → forget (cleanup)
 ```
 

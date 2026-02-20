@@ -80,13 +80,23 @@ memory.
 
 ### M5 — MCP Server
 - [x] MCP protocol implementation (JSON-RPC over stdio)
-- [x] Expose tools: search, index, status, annotate, annotations, focus, visit, forget, projects
+- [x] Expose tools: search, index, status, annotate, annotations, focus, visit, forget, branch-diff, draft-commit, changelog, projects
 - [x] Expose resources: indexed project stats
 - [x] Agent-friendly structured output
 - [x] Multi-project support via `project` parameter
 
+### M5.1 — Git Integration
+- [x] `branch-diff`: structural diff between branches (added/modified/removed symbols per file)
+- [x] `draft-commit`: auto-generate commit messages from staged/unstaged structural changes
+- [x] `changelog`: generate markdown changelog from branch diff (grouped by Added/Modified/Removed)
+- [x] Auto-focus changed files from branch-diff (`--focus`)
+- [x] Import/use statement indexing: `use` (Rust), `import`/`from`/`require()` (JS/TS/Python), `import` (Go), `#include` (C)
+- [x] Robust git output parsing: `-z` NUL terminator, `--no-renames`, duplicate symbol handling
+- [x] CLI + MCP tool exposure for all git commands
+
 ### M6 — Dependency & Structure
-- [ ] Import/dependency graph extraction per language
+- [x] Import/use statement indexing (moved to M5.1)
+- [ ] Full dependency graph extraction per language (beyond imports)
 - [ ] "What depends on X?" and "What does X depend on?" queries
 - [ ] Directory-level summaries (pre-computed or on-demand)
 
@@ -163,8 +173,13 @@ src/
     mod.rs         — MCP server entry point
     server.rs      — JSON-RPC over stdio loop
     protocol.rs    — JSON-RPC + MCP type definitions
-    tools.rs       — 9 tool definitions + handlers
+    tools.rs       — 12 tool definitions + handlers
     resources.rs   — resource definitions + handlers
+
+  git/
+    mod.rs         — git integration entry point
+    diff.rs        — structural branch diff, staged diff (tree-sitter chunk comparison)
+    format.rs      — commit message + changelog generation from structural diffs
 
 Planned:
   search/

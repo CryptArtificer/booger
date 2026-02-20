@@ -118,6 +118,39 @@ enum Commands {
         #[arg(default_value = ".")]
         path: String,
     },
+    /// Show structural diff between current branch and a base ref
+    BranchDiff {
+        /// Base branch or commit to compare against (e.g. main, origin/main)
+        #[arg(default_value = "main")]
+        base: String,
+        /// Project root
+        #[arg(short, long, default_value = ".")]
+        root: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+        /// Auto-focus changed files in volatile context
+        #[arg(long)]
+        focus: bool,
+        /// Session ID for auto-focus
+        #[arg(short, long)]
+        session: Option<String>,
+    },
+    /// Draft a commit message from staged (or unstaged) changes
+    DraftCommit {
+        /// Project root
+        #[arg(short, long, default_value = ".")]
+        root: String,
+    },
+    /// Generate a structural changelog between current state and a base ref
+    Changelog {
+        /// Base branch or commit to compare against
+        #[arg(default_value = "main")]
+        base: String,
+        /// Project root
+        #[arg(short, long, default_value = ".")]
+        root: String,
+    },
     /// Start MCP server (JSON-RPC over stdio, for agent integration)
     Mcp {
         /// Default project root directory
@@ -162,6 +195,11 @@ fn main() -> Result<()> {
             println!("Semantic search: {query}");
             todo!("M3: semantic search")
         }
+        Commands::BranchDiff { base, root, json, focus, session } => {
+            cmd_branch_diff(&root, &base, json, focus, session.as_deref())
+        }
+        Commands::DraftCommit { root } => cmd_draft_commit(&root),
+        Commands::Changelog { base, root } => cmd_changelog(&root, &base),
         Commands::Mcp { root } => cmd_mcp(&root),
         Commands::Annotate { target, note, root, session, ttl } => {
             cmd_annotate(&root, &target, &note, session.as_deref(), ttl)
@@ -345,6 +383,80 @@ fn cmd_forget(root: &str, session_id: Option<&str>) -> Result<()> {
     )?;
     let ws = booger::context::workset::clear(&root, &config, session_id)?;
     eprintln!("Cleared {anns} annotations, {ws} workset entries");
+    Ok(())
+}
+
+fn cmd_branch_diff(
+    root: &str,
+    base_ref: &str,
+    json: bool,
+    auto_focus: bool,
+    session_id: Option<&str>,
+) -> Result<()> {
+    let root = PathBuf::from(root);
+    let diff = booger::git::diff::branch_diff(&root, base_ref)?;
+
+    if auto_focus && !diff.files.is_empty() {
+        let config = Config::load(&root).unwrap_or_default();
+        let paths: Vec<String> = diff.files.iter().map(|f| f.path.clone()).collect();
+        booger::context::workset::focus(&root, &config, &paths, session_id)?;
+        eprintln!("Auto-focused {} changed files", paths.len());
+    }
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&diff)?);
+    } else {
+        eprintln!(
+            "Branch diff vs {} — {} file(s) ({} added, {} modified, {} deleted)",
+            diff.base_ref,
+            diff.files.len(),
+            diff.summary.files_added,
+            diff.summary.files_modified,
+            diff.summary.files_deleted,
+        );
+        eprintln!(
+            "Symbols: +{} added, ~{} modified, -{} removed\n",
+            diff.summary.symbols_added,
+            diff.summary.symbols_modified,
+            diff.summary.symbols_removed,
+        );
+
+        for f in &diff.files {
+            let status = match f.status {
+                booger::git::diff::FileStatus::Added => "+",
+                booger::git::diff::FileStatus::Modified => "~",
+                booger::git::diff::FileStatus::Deleted => "-",
+            };
+            println!("[{status}] {}", f.path);
+
+            for s in &f.added {
+                println!("    + {} {} ({}:{})", s.kind, s.name, s.start_line, s.end_line);
+            }
+            for s in &f.modified {
+                println!("    ~ {} {} ({}:{})", s.kind, s.name, s.start_line, s.end_line);
+            }
+            for s in &f.removed {
+                println!("    - {} {} ({}:{})", s.kind, s.name, s.start_line, s.end_line);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn cmd_draft_commit(root: &str) -> Result<()> {
+    let root = PathBuf::from(root);
+    let diff = booger::git::diff::staged_diff(&root)?;
+    let msg = booger::git::format::draft_commit_message(&diff);
+    println!("{msg}");
+    Ok(())
+}
+
+fn cmd_changelog(root: &str, base_ref: &str) -> Result<()> {
+    let root = PathBuf::from(root);
+    let diff = booger::git::diff::branch_diff(&root, base_ref)?;
+    let log = booger::git::format::changelog(&diff);
+    println!("{log}");
     Ok(())
 }
 

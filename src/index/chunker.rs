@@ -163,6 +163,10 @@ fn classify_rust(node: &Node, kind: &str, source: &str) -> Option<(String, Optio
             let name = find_child_by_field(node, "name").map(|n| node_text(&n, source).to_string());
             Some(("macro".into(), name))
         }
+        "use_declaration" => {
+            let text = node_text(node, source).trim_end_matches(';').trim();
+            Some(("import".into(), Some(text.to_string())))
+        }
         _ => None,
     }
 }
@@ -178,7 +182,6 @@ fn classify_python(node: &Node, kind: &str, source: &str) -> Option<(String, Opt
             Some(("class".into(), name))
         }
         "decorated_definition" => {
-            // Recurse into the actual definition inside the decorator
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 if let Some(result) = classify_python(&child, child.kind(), source) {
@@ -186,6 +189,10 @@ fn classify_python(node: &Node, kind: &str, source: &str) -> Option<(String, Opt
                 }
             }
             None
+        }
+        "import_statement" | "import_from_statement" => {
+            let text = node_text(node, source).trim().to_string();
+            Some(("import".into(), Some(text)))
         }
         _ => None,
     }
@@ -206,9 +213,10 @@ fn classify_js_ts(node: &Node, kind: &str, source: &str) -> Option<(String, Opti
             Some(("method".into(), name))
         }
         "lexical_declaration" | "variable_declaration" => {
-            // Catch `const foo = () => {}` and `export const`
             let text = node_text(node, source);
-            if text.contains("=>") || text.contains("function") {
+            if text.contains("require(") {
+                Some(("import".into(), Some(text.trim().to_string())))
+            } else if text.contains("=>") || text.contains("function") {
                 let name = node
                     .child(1) // declarator
                     .and_then(|d| d.child_by_field_name("name"))
@@ -239,6 +247,10 @@ fn classify_js_ts(node: &Node, kind: &str, source: &str) -> Option<(String, Opti
             let name = find_child_by_field(node, "name").map(|n| node_text(&n, source).to_string());
             Some(("enum".into(), name))
         }
+        "import_statement" => {
+            let text = node_text(node, source).trim().to_string();
+            Some(("import".into(), Some(text)))
+        }
         _ => None,
     }
 }
@@ -256,6 +268,10 @@ fn classify_go(node: &Node, kind: &str, source: &str) -> Option<(String, Option<
         "type_declaration" => {
             let name = node.child(1).map(|n| node_text(&n, source).to_string());
             Some(("type".into(), name))
+        }
+        "import_declaration" => {
+            let text = node_text(node, source).trim().to_string();
+            Some(("import".into(), Some(text)))
         }
         _ => None,
     }
@@ -279,6 +295,10 @@ fn classify_c(node: &Node, kind: &str, source: &str) -> Option<(String, Option<S
         }
         "type_definition" => {
             Some(("type_alias".into(), None))
+        }
+        "preproc_include" => {
+            let text = node_text(node, source).trim().to_string();
+            Some(("import".into(), Some(text)))
         }
         _ => None,
     }

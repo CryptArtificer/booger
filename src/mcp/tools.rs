@@ -175,6 +175,52 @@ pub fn list_tools() -> Vec<ToolDefinition> {
             }),
         },
         ToolDefinition {
+            name: "branch-diff".into(),
+            description: "Structural diff between current branch and a base ref. Shows which symbols (functions, structs, imports, etc.) were added, modified, or removed. Optionally auto-focuses changed files to boost them in search.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "base": {
+                        "type": "string",
+                        "description": "Base branch or commit to compare against (default: main)"
+                    },
+                    "auto_focus": {
+                        "type": "boolean",
+                        "description": "If true, auto-focus changed files so subsequent searches prioritize them"
+                    },
+                    "session_id": {
+                        "type": "string",
+                        "description": "Session ID for auto-focus scope"
+                    },
+                    "project": project_prop()
+                }
+            }),
+        },
+        ToolDefinition {
+            name: "draft-commit".into(),
+            description: "Generate a commit message from staged (or unstaged) changes. Analyzes structural diff (added/modified/removed symbols) to produce a meaningful message.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "project": project_prop()
+                }
+            }),
+        },
+        ToolDefinition {
+            name: "changelog".into(),
+            description: "Generate a markdown changelog from a structural branch diff. Shows added, modified, and removed symbols grouped by category.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "base": {
+                        "type": "string",
+                        "description": "Base branch or commit to compare against (default: main)"
+                    },
+                    "project": project_prop()
+                }
+            }),
+        },
+        ToolDefinition {
             name: "projects".into(),
             description: "List all registered projects. Use project names in the 'project' parameter of other tools to target a specific project.".into(),
             input_schema: json!({
@@ -195,6 +241,9 @@ pub fn call_tool(name: &str, args: &Value, project_root: &PathBuf) -> ToolResult
         "focus" => tool_focus(args, project_root),
         "visit" => tool_visit(args, project_root),
         "forget" => tool_forget(args, project_root),
+        "branch-diff" => tool_branch_diff(args, project_root),
+        "draft-commit" => tool_draft_commit(args, project_root),
+        "changelog" => tool_changelog(args, project_root),
         "projects" => tool_projects(),
         _ => ToolResult::error(format!("Unknown tool: {name}")),
     }
@@ -353,6 +402,63 @@ fn tool_forget(args: &Value, project_root: &PathBuf) -> ToolResult {
     match (anns, ws) {
         (Ok(a), Ok(w)) => ToolResult::success(format!("Cleared {a} annotations, {w} workset entries")),
         (Err(e), _) | (_, Err(e)) => ToolResult::error(format!("Failed to clear: {e}")),
+    }
+}
+
+fn tool_branch_diff(args: &Value, project_root: &PathBuf) -> ToolResult {
+    let root = resolve_project(args, project_root);
+    let base = args
+        .get("base")
+        .and_then(|v| v.as_str())
+        .unwrap_or("main");
+
+    match crate::git::diff::branch_diff(&root, base) {
+        Ok(diff) => {
+            let auto_focus = args
+                .get("auto_focus")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            if auto_focus && !diff.files.is_empty() {
+                let config = Config::load(&root).unwrap_or_default();
+                let session_id = args.get("session_id").and_then(|v| v.as_str());
+                let paths: Vec<String> = diff.files.iter().map(|f| f.path.clone()).collect();
+                let _ = context::workset::focus(&root, &config, &paths, session_id);
+            }
+
+            match serde_json::to_string_pretty(&diff) {
+                Ok(json) => ToolResult::success(json),
+                Err(e) => ToolResult::error(format!("Serialization error: {e}")),
+            }
+        }
+        Err(e) => ToolResult::error(format!("Branch diff failed: {e}")),
+    }
+}
+
+fn tool_draft_commit(args: &Value, project_root: &PathBuf) -> ToolResult {
+    let root = resolve_project(args, project_root);
+    match crate::git::diff::staged_diff(&root) {
+        Ok(diff) => {
+            let msg = crate::git::format::draft_commit_message(&diff);
+            ToolResult::success(msg)
+        }
+        Err(e) => ToolResult::error(format!("Draft commit failed: {e}")),
+    }
+}
+
+fn tool_changelog(args: &Value, project_root: &PathBuf) -> ToolResult {
+    let root = resolve_project(args, project_root);
+    let base = args
+        .get("base")
+        .and_then(|v| v.as_str())
+        .unwrap_or("main");
+
+    match crate::git::diff::branch_diff(&root, base) {
+        Ok(diff) => {
+            let log = crate::git::format::changelog(&diff);
+            ToolResult::success(log)
+        }
+        Err(e) => ToolResult::error(format!("Changelog failed: {e}")),
     }
 }
 

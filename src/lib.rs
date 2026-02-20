@@ -1,6 +1,7 @@
 pub mod config;
 pub mod context;
 pub mod embed;
+pub mod git;
 pub mod graph;
 pub mod index;
 pub mod mcp;
