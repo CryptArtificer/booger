@@ -132,24 +132,33 @@ still require a session restart for the client to discover them.
 
 | Tool | Description |
 |---|---|
-| `annotate` | Attach notes to files/symbols/line-ranges with optional TTL |
-| `annotations` | List annotations (filterable by target and session) |
-| `branch-diff` | Structural diff between branches — added/modified/removed symbols per file |
-| `changelog` | Generate markdown changelog from branch diff |
-| `draft-commit` | Generate commit message from staged/unstaged structural changes |
-| `embed` | Generate embeddings for semantic search via [Ollama](https://ollama.ai/) |
-| `focus` | Boost search results for specific paths |
-| `forget` | Clear volatile context (all or session-scoped) |
+| | **Search & Discovery** |
 | `grep` | Regex/literal search within indexed chunks — returns matching lines with context |
 | `hybrid-search` | Combined FTS + semantic search with tunable alpha weighting |
-| `index` | Index a directory (incremental, BLAKE3 hash-based change detection) |
-| `projects` | List registered projects |
 | `references` | Find all usages of a symbol: definitions, call sites, type references, imports |
 | `search` | Full-text search with [BM25](https://en.wikipedia.org/wiki/Okapi_BM25) ranking, volatile context re-ranking, kind/language/path filters |
 | `semantic-search` | Similarity search via local embeddings (requires [Ollama](https://ollama.ai/)) |
-| `status` | Index stats: files, chunks, languages, chunk kind breakdown |
 | `symbols` | List all symbols in a file/directory — structural outline with smart signatures |
+| | |
+| | **Indexing & Embeddings** |
+| `embed` | Generate embeddings for semantic search via [Ollama](https://ollama.ai/) |
+| `index` | Index a directory (incremental, BLAKE3 hash-based change detection) |
+| `status` | Index stats: files, chunks, languages, chunk kind breakdown |
+| | |
+| | **Volatile Context** |
+| `annotate` | Attach notes to files/symbols/line-ranges with optional TTL |
+| `annotations` | List annotations (filterable by target and session) |
+| `focus` | Boost search results for specific paths |
+| `forget` | Clear volatile context (all or session-scoped) |
 | `visit` | Deprioritize already-seen paths in search |
+| | |
+| | **Git** |
+| `branch-diff` | Structural diff between branches — added/modified/removed symbols per file |
+| `changelog` | Generate markdown changelog from branch diff |
+| `draft-commit` | Generate commit message from staged/unstaged structural changes |
+| | |
+| | **Registry** |
+| `projects` | List registered projects |
 
 All tools accept an optional `project` parameter — a registered project
 name or a literal path. Unknown project names return an error (no silent
