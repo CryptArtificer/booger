@@ -1,0 +1,9 @@
+[package]
+name = "booger"
+version = "0.1.0"
+edition = "2024"
+description = "Local code search engine, index, and working memory for AI agents"
+license = "MIT"
+
+[dependencies]
+clap = { version = "4.5.60", features = ["derive"] }
