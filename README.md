@@ -23,8 +23,10 @@ AI agents use to efficiently find and reason about code.
 18 tools. 7 languages. Structural search, references, git-aware diffs, semantic
 embeddings, volatile working memory — all in a single static binary.
 
+**[Live Demo](doc/demo.md)** &middot;
 **[Architecture Diagrams](doc/architecture.md)** &middot;
 **[Concepts & Technology](doc/concepts.md)** &middot;
+**[Future Additions](doc/future.md)** &middot;
 **[Project Plan](PLAN.md)**
 
 ## Install
