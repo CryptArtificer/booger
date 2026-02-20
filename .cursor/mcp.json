@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "booger": {
-      "command": "booger",
-      "args": ["mcp", "/Users/johjoh/Dev/tools/booger"]
+      "command": "/Users/johjoh/Dev/tools/booger/booger-proxy.sh",
+      "args": ["/Users/johjoh/Dev/tools/booger"]
     }
   }
 }
