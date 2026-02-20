@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 use booger::config::Config;
+use booger::embed::Embedder;
 
 #[derive(Parser)]
 #[command(name = "booger", version, about = "I found it! — Local code search for AI agents")]
@@ -39,10 +40,37 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
-    /// Semantic similarity search over indexed code
+    /// Semantic similarity search over indexed code (requires embeddings)
     Semantic {
         /// Natural language query
         query: String,
+        /// Project root
+        #[arg(short, long, default_value = ".")]
+        root: String,
+        /// Filter by language
+        #[arg(short, long)]
+        language: Option<String>,
+        /// Filter by path prefix
+        #[arg(short, long)]
+        path: Option<String>,
+        /// Max results
+        #[arg(short = 'n', long, default_value = "20")]
+        max_results: usize,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Generate embeddings for indexed chunks (requires ollama)
+    Embed {
+        /// Project root
+        #[arg(default_value = ".")]
+        path: String,
+        /// Ollama model name
+        #[arg(long, default_value = "nomic-embed-text")]
+        model: String,
+        /// Ollama server URL
+        #[arg(long, default_value = "http://localhost:11434")]
+        url: String,
     },
     /// Annotate a file, symbol, or line range with a note
     Annotate {
@@ -191,9 +219,11 @@ fn main() -> Result<()> {
         Commands::Search { query, language, path, root, max_results, json } => {
             cmd_search(&root, &query, language.as_deref(), path.as_deref(), max_results, json)
         }
-        Commands::Semantic { query } => {
-            println!("Semantic search: {query}");
-            todo!("M3: semantic search")
+        Commands::Semantic { query, root, language, path, max_results, json } => {
+            cmd_semantic(&root, &query, language.as_deref(), path.as_deref(), max_results, json)
+        }
+        Commands::Embed { path, model, url } => {
+            cmd_embed(&path, &model, &url)
         }
         Commands::BranchDiff { base, root, json, focus, session } => {
             cmd_branch_diff(&root, &base, json, focus, session.as_deref())
@@ -438,6 +468,75 @@ fn cmd_branch_diff(
             for s in &f.removed {
                 println!("    - {} {} ({}:{})", s.kind, s.name, s.start_line, s.end_line);
             }
+        }
+    }
+
+    Ok(())
+}
+
+fn cmd_embed(path: &str, model: &str, url: &str) -> Result<()> {
+    let root = PathBuf::from(path);
+    let config = Config::load(&root).unwrap_or_default();
+
+    eprintln!("Connecting to ollama at {url} (model: {model})...");
+    let embedder = booger::embed::ollama::OllamaEmbedder::new(url, model)?;
+    eprintln!("Model loaded ({} dimensions)", embedder.dimensions());
+
+    let stats = booger::search::semantic::embed_chunks(&root, &config, &embedder)?;
+    eprintln!(
+        "Done. {}/{} chunks embedded ({} new)",
+        stats.embedded, stats.total_chunks, stats.newly_embedded,
+    );
+    Ok(())
+}
+
+fn cmd_semantic(
+    root: &str,
+    query: &str,
+    language: Option<&str>,
+    path_prefix: Option<&str>,
+    max_results: usize,
+    json: bool,
+) -> Result<()> {
+    let root = PathBuf::from(root);
+    let config = Config::load(&root).unwrap_or_default();
+
+    let embedder = booger::embed::ollama::OllamaEmbedder::default()?;
+
+    let mut search_query = booger::search::semantic::SemanticQuery::new(query);
+    search_query.language = language.map(String::from);
+    search_query.path_prefix = path_prefix.map(String::from);
+    search_query.max_results = max_results;
+
+    let results = booger::search::semantic::search(&root, &config, &embedder, &search_query)?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&results)?);
+    } else {
+        if results.is_empty() {
+            eprintln!("No results. Run `booger embed` first to generate embeddings.");
+            return Ok(());
+        }
+        eprintln!("{} result(s)\n", results.len());
+        for (i, r) in results.iter().enumerate() {
+            let name = r.chunk_name.as_deref().unwrap_or("");
+            let name_display = if name.is_empty() {
+                String::new()
+            } else {
+                format!(" ({name})")
+            };
+            let similarity = -r.rank;
+            println!(
+                "── [{i}] {}:{}-{} [{}{}] (sim: {similarity:.3}) ──",
+                r.file_path, r.start_line, r.end_line, r.chunk_kind, name_display,
+            );
+            let preview: String = r.content.lines().take(10).collect::<Vec<_>>().join("\n");
+            println!("{preview}");
+            let total_lines = r.content.lines().count();
+            if total_lines > 10 {
+                println!("  ... ({} more lines)", total_lines - 10);
+            }
+            println!();
         }
     }
 

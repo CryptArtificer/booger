@@ -208,6 +208,7 @@ impl Store {
         query: &str,
         language: Option<&str>,
         path_prefix: Option<&str>,
+        kind: Option<&str>,
         max_results: usize,
     ) -> Result<Vec<SearchResult>> {
         let query = sanitize_fts_query(query);
@@ -229,14 +230,17 @@ impl Store {
         }
         if path_prefix.is_some() {
             sql.push_str(&format!(" AND f.path LIKE ?{param_idx} || '%'"));
+            param_idx += 1;
+        }
+        if kind.is_some() {
+            sql.push_str(&format!(" AND c.kind = ?{param_idx}"));
+            param_idx += 1;
         }
 
-        sql.push_str(" ORDER BY chunks_fts.rank LIMIT ?");
-        sql.push_str(&(param_idx + if path_prefix.is_some() { 1 } else { 0 }).to_string());
+        sql.push_str(&format!(" ORDER BY chunks_fts.rank LIMIT ?{param_idx}"));
 
         let mut stmt = self.conn.prepare(&sql)?;
 
-        // Bind parameters dynamically
         let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
         params_vec.push(Box::new(query.to_string()));
         if let Some(lang) = language {
@@ -244,6 +248,9 @@ impl Store {
         }
         if let Some(prefix) = path_prefix {
             params_vec.push(Box::new(prefix.to_string()));
+        }
+        if let Some(k) = kind {
+            params_vec.push(Box::new(k.to_string()));
         }
         params_vec.push(Box::new(max_results as i64));
 
@@ -267,6 +274,133 @@ impl Store {
             results.push(row?);
         }
         Ok(results)
+    }
+
+    /// List all symbols (chunks) in a file or directory, optionally filtered by kind.
+    pub fn list_symbols(
+        &self,
+        path_prefix: Option<&str>,
+        kind: Option<&str>,
+    ) -> Result<Vec<SearchResult>> {
+        let mut sql = String::from(
+            "SELECT f.path, f.language, c.kind, c.name, c.start_line, c.end_line, c.content
+             FROM chunks c
+             JOIN files f ON f.id = c.file_id
+             WHERE c.kind != 'raw'",
+        );
+        let mut param_idx = 1;
+
+        if path_prefix.is_some() {
+            sql.push_str(&format!(" AND f.path LIKE ?{param_idx} || '%'"));
+            param_idx += 1;
+        }
+        if kind.is_some() {
+            sql.push_str(&format!(" AND c.kind = ?{param_idx}"));
+        }
+
+        sql.push_str(" ORDER BY f.path, c.start_line");
+
+        let mut stmt = self.conn.prepare(&sql)?;
+
+        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        if let Some(prefix) = path_prefix {
+            params_vec.push(Box::new(prefix.to_string()));
+        }
+        if let Some(k) = kind {
+            params_vec.push(Box::new(k.to_string()));
+        }
+
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+
+        let rows = stmt.query_map(param_refs.as_slice(), |row| {
+            Ok(SearchResult {
+                file_path: row.get(0)?,
+                language: row.get(1)?,
+                chunk_kind: row.get(2)?,
+                chunk_name: row.get(3)?,
+                start_line: row.get(4)?,
+                end_line: row.get(5)?,
+                content: row.get(6)?,
+                rank: 0.0,
+            })
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    /// Return all chunks, optionally filtered by path and/or kind.
+    /// Unlike `list_symbols`, this includes raw chunks.
+    pub fn all_chunks(
+        &self,
+        path_prefix: Option<&str>,
+        kind: Option<&str>,
+    ) -> Result<Vec<SearchResult>> {
+        let mut sql = String::from(
+            "SELECT f.path, f.language, c.kind, c.name, c.start_line, c.end_line, c.content
+             FROM chunks c
+             JOIN files f ON f.id = c.file_id
+             WHERE 1=1",
+        );
+        let mut param_idx = 1;
+
+        if path_prefix.is_some() {
+            sql.push_str(&format!(" AND f.path LIKE ?{param_idx} || '%'"));
+            param_idx += 1;
+        }
+        if kind.is_some() {
+            sql.push_str(&format!(" AND c.kind = ?{param_idx}"));
+        }
+
+        sql.push_str(" ORDER BY f.path, c.start_line");
+
+        let mut stmt = self.conn.prepare(&sql)?;
+
+        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        if let Some(prefix) = path_prefix {
+            params_vec.push(Box::new(prefix.to_string()));
+        }
+        if let Some(k) = kind {
+            params_vec.push(Box::new(k.to_string()));
+        }
+
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+
+        let rows = stmt.query_map(param_refs.as_slice(), |row| {
+            Ok(SearchResult {
+                file_path: row.get(0)?,
+                language: row.get(1)?,
+                chunk_kind: row.get(2)?,
+                chunk_name: row.get(3)?,
+                start_line: row.get(4)?,
+                end_line: row.get(5)?,
+                content: row.get(6)?,
+                rank: 0.0,
+            })
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    /// Return a breakdown of chunks by kind.
+    pub fn kind_stats(&self) -> Result<Vec<(String, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT kind, COUNT(*) FROM chunks GROUP BY kind ORDER BY COUNT(*) DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
     }
 
     // ── Annotations ──
@@ -442,6 +576,109 @@ impl Store {
     }
 
     /// Collect index statistics.
+    // ── Embeddings ──
+
+    pub fn upsert_embedding(&self, chunk_id: i64, model: &str, embedding: &[f32]) -> Result<()> {
+        let blob = embedding_to_blob(embedding);
+        self.conn.execute(
+            "INSERT INTO embeddings (chunk_id, model, embedding)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(chunk_id) DO UPDATE SET model = ?2, embedding = ?3",
+            params![chunk_id, model, blob],
+        )?;
+        Ok(())
+    }
+
+    pub fn upsert_embeddings_batch(
+        &self,
+        entries: &[(i64, &str, &[f32])],
+    ) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO embeddings (chunk_id, model, embedding)
+                 VALUES (?1, ?2, ?3)
+                 ON CONFLICT(chunk_id) DO UPDATE SET model = ?2, embedding = ?3",
+            )?;
+            for (chunk_id, model, embedding) in entries {
+                let blob = embedding_to_blob(embedding);
+                stmt.execute(params![chunk_id, model, blob])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Get all chunk IDs that lack an embedding (or have one from a different model).
+    pub fn chunks_needing_embedding(&self, model: &str) -> Result<Vec<(i64, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT c.id, c.content FROM chunks c
+             LEFT JOIN embeddings e ON c.id = e.chunk_id AND e.model = ?1
+             WHERE e.chunk_id IS NULL",
+        )?;
+        let rows = stmt.query_map(params![model], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    /// Load all embeddings for vector search. Returns (chunk_id, embedding).
+    pub fn all_embeddings(&self) -> Result<Vec<(i64, Vec<f32>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT chunk_id, embedding FROM embeddings",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let blob: Vec<u8> = row.get(1)?;
+            Ok((row.get::<_, i64>(0)?, blob))
+        })?;
+        let mut result = Vec::new();
+        for row in rows {
+            let (id, blob) = row?;
+            result.push((id, blob_to_embedding(&blob)));
+        }
+        Ok(result)
+    }
+
+    /// Load a chunk by ID (for building search results from vector matches).
+    pub fn chunk_by_id(&self, chunk_id: i64) -> Result<Option<SearchResult>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT f.path, f.language, c.kind, c.name, c.start_line, c.end_line, c.content
+             FROM chunks c JOIN files f ON c.file_id = f.id
+             WHERE c.id = ?1",
+        )?;
+        let mut rows = stmt.query_map(params![chunk_id], |row| {
+            Ok(SearchResult {
+                file_path: row.get(0)?,
+                language: row.get(1)?,
+                chunk_kind: row.get(2)?,
+                chunk_name: row.get(3)?,
+                start_line: row.get(4)?,
+                end_line: row.get(5)?,
+                content: row.get(6)?,
+                rank: 0.0,
+            })
+        })?;
+        match rows.next() {
+            Some(Ok(r)) => Ok(Some(r)),
+            Some(Err(e)) => Err(e.into()),
+            None => Ok(None),
+        }
+    }
+
+    pub fn chunk_count(&self) -> Result<i64> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM chunks", [], |r| r.get(0),
+        )?;
+        Ok(count)
+    }
+
+    pub fn embedding_count(&self) -> Result<i64> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM embeddings", [], |r| r.get(0),
+        )?;
+        Ok(count)
+    }
+
     pub fn stats(&self, storage_dir: &Path) -> Result<IndexStats> {
         let file_count: i64 =
             self.conn
@@ -476,6 +713,20 @@ impl Store {
             languages,
         })
     }
+}
+
+fn embedding_to_blob(embedding: &[f32]) -> Vec<u8> {
+    let mut blob = Vec::with_capacity(embedding.len() * 4);
+    for &val in embedding {
+        blob.extend_from_slice(&val.to_le_bytes());
+    }
+    blob
+}
+
+fn blob_to_embedding(blob: &[u8]) -> Vec<f32> {
+    blob.chunks_exact(4)
+        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect()
 }
 
 /// Sanitize user input for FTS5 MATCH queries.

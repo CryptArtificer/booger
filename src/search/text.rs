@@ -9,6 +9,7 @@ pub struct SearchQuery {
     pub text: String,
     pub language: Option<String>,
     pub path_prefix: Option<String>,
+    pub kind: Option<String>,
     pub max_results: usize,
     pub session_id: Option<String>,
 }
@@ -19,6 +20,7 @@ impl SearchQuery {
             text: text.into(),
             language: None,
             path_prefix: None,
+            kind: None,
             max_results: 20,
             session_id: None,
         }
@@ -50,8 +52,22 @@ pub fn search(root: &Path, config: &Config, query: &SearchQuery) -> Result<Vec<S
         &query.text,
         query.language.as_deref(),
         query.path_prefix.as_deref(),
+        query.kind.as_deref(),
         fetch_limit,
     )?;
+
+    // OR fallback: if AND-style query returned nothing and query has multiple
+    // terms, retry with OR so at least partial matches surface.
+    if results.is_empty() && query.text.split_whitespace().count() > 1 {
+        let or_query = query.text.split_whitespace().collect::<Vec<_>>().join(" OR ");
+        results = store.search(
+            &or_query,
+            query.language.as_deref(),
+            query.path_prefix.as_deref(),
+            query.kind.as_deref(),
+            fetch_limit,
+        )?;
+    }
 
     if results.is_empty() {
         return Ok(results);

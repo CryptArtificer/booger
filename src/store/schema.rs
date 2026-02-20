@@ -62,6 +62,15 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
             INSERT INTO chunks_fts(chunks_fts, rowid, name, content) VALUES('delete', old.id, old.name, old.content);
             INSERT INTO chunks_fts(rowid, name, content) VALUES (new.id, new.name, new.content);
         END;
+        -- Embeddings: vector representations of chunks for semantic search.
+        -- embedding is a BLOB of packed f32 values (dimensions × 4 bytes).
+        -- model tracks which model generated the embedding for invalidation.
+        CREATE TABLE IF NOT EXISTS embeddings (
+            chunk_id   INTEGER PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
+            model      TEXT NOT NULL,
+            embedding  BLOB NOT NULL
+        );
+
         -- Volatile context: annotations attached to files/symbols/line-ranges.
         -- session_id scopes annotations to a session; NULL means persistent.
         -- expires_at enables TTL; NULL means no expiry.
@@ -91,7 +100,7 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     ")?;
 
     conn.execute(
-        "INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '3')",
+        "INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '4')",
         [],
     )?;
 
