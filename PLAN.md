@@ -38,25 +38,26 @@ memory.
 
 ## Milestones
 
-### M0 — Skeleton (current)
+### M0 — Skeleton
 - [x] Project init
-- [ ] CLI scaffold (clap)
-- [ ] Configuration (index roots, storage path)
-- [ ] Basic project structure (modules)
+- [x] CLI scaffold (clap)
+- [x] Configuration (index roots, storage path)
+- [x] Basic project structure (modules)
 
 ### M1 — Ingestion & Storage
-- [ ] Walk directory tree, respect .gitignore
-- [ ] Tree-sitter parsing: extract functions, structs, classes, etc.
-- [ ] Chunk storage in SQLite (file path, byte range, line range, content, language, kind)
-- [ ] Incremental updates: hash-based change detection (mtime + content hash)
-- [ ] `booger index <path>` CLI command
+- [x] Walk directory tree, respect .gitignore
+- [x] Tree-sitter parsing: extract functions, structs, classes, etc.
+- [x] Chunk storage in SQLite (file path, byte range, line range, content, language, kind)
+- [x] Incremental updates: hash-based change detection (BLAKE3 content hash)
+- [x] `booger index <path>` CLI command
 
 ### M2 — Text Search
-- [ ] Full-text search over stored chunks (SQLite FTS5 or tantivy)
+- [x] Full-text search over stored chunks (SQLite FTS5)
+- [x] Path / language / kind filters
+- [x] `booger search <query>` CLI command
+- [x] Ranked results with context snippets
+- [x] JSON output mode for agent consumption
 - [ ] Symbol-aware search (find definition, find references)
-- [ ] Path / language / kind filters
-- [ ] `booger search <query>` CLI command
-- [ ] Ranked results with context snippets
 
 ### M3 — Semantic Search
 - [ ] Embedding generation (pluggable backend: local ollama, remote OpenAI)
@@ -65,17 +66,19 @@ memory.
 - [ ] `booger semantic <query>` CLI command
 
 ### M4 — Volatile Context Layer
-- [ ] Annotations: attach notes to file/symbol/line-range (with optional TTL)
+- [x] Annotations: attach notes to file/symbol/line-range (with optional TTL)
+- [x] Working set: explicit focus paths that boost results
+- [x] Visited/blacklist: deprioritize already-seen results
+- [x] Search re-ranking using volatile context
+- [x] `booger annotate`, `booger focus`, `booger visit`, `booger forget` CLI commands
 - [ ] Intents: session-level goals that bias search ranking
-- [ ] Working set: explicit focus paths that boost results
-- [ ] Visited/blacklist: deprioritize already-seen results
-- [ ] `booger annotate`, `booger focus`, `booger forget` CLI commands
 
 ### M5 — MCP Server
-- [ ] MCP protocol implementation (JSON-RPC over stdio)
-- [ ] Expose tools: search, semantic, annotate, focus, index
-- [ ] Expose resources: indexed projects, stats
-- [ ] Agent-friendly structured output
+- [x] MCP protocol implementation (JSON-RPC over stdio)
+- [x] Expose tools: search, index, status, annotate, annotations, focus, visit, forget, projects
+- [x] Expose resources: indexed project stats
+- [x] Agent-friendly structured output
+- [x] Multi-project support via `project` parameter
 
 ### M6 — Dependency & Structure
 - [ ] Import/dependency graph extraction per language
@@ -83,8 +86,8 @@ memory.
 - [ ] Directory-level summaries (pre-computed or on-demand)
 
 ### M7 — Polish
+- [x] Multi-project registry (~/.booger/projects.json)
 - [ ] Filesystem watcher for live re-indexing
-- [ ] Multi-project support
 - [ ] Remote index sharing (optional)
 - [ ] Performance tuning (large repos: 100k+ files)
 - [ ] Comprehensive error handling and logging
