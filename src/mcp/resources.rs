@@ -18,7 +18,8 @@ pub fn list_resources(project_root: &PathBuf) -> Vec<Resource> {
 }
 
 pub fn read_resource(uri: &str, project_root: &PathBuf) -> Result<Vec<ResourceContent>, String> {
-    if uri.starts_with("booger://status/") {
+    let expected_uri = format!("booger://status/{}", project_root.display());
+    if uri == expected_uri {
         let config = Config::load(project_root).unwrap_or_default();
         match index::index_status(project_root, &config) {
             Ok(stats) => {

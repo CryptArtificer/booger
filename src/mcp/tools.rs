@@ -501,7 +501,10 @@ fn tool_search(args: &Value, project_root: &PathBuf) -> ToolResult {
         None => return ToolResult::error("Missing required parameter: query"),
     };
 
-    let root = resolve_project(args, project_root);
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
     let config = Config::load(&root).unwrap_or_default();
 
     let mut search_query = SearchQuery::new(query);
@@ -531,7 +534,10 @@ fn tool_search(args: &Value, project_root: &PathBuf) -> ToolResult {
 }
 
 fn tool_index(args: &Value, project_root: &PathBuf) -> ToolResult {
-    let root = resolve_project(args, project_root);
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
     let config = Config::load(&root).unwrap_or_default();
 
     match index::index_directory(&root, &config) {
@@ -550,7 +556,10 @@ fn tool_index(args: &Value, project_root: &PathBuf) -> ToolResult {
 }
 
 fn tool_status(args: &Value, project_root: &PathBuf) -> ToolResult {
-    let root = resolve_project(args, project_root);
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
     let config = Config::load(&root).unwrap_or_default();
 
     match index::index_status(&root, &config) {
@@ -594,7 +603,10 @@ fn tool_annotate(args: &Value, project_root: &PathBuf) -> ToolResult {
     };
     let session_id = args.get("session_id").and_then(|v| v.as_str());
     let ttl = args.get("ttl_seconds").and_then(|v| v.as_i64());
-    let root = resolve_project(args, project_root);
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
     let config = Config::load(&root).unwrap_or_default();
 
     match context::annotations::add(&root, &config, target, note, session_id, ttl) {
@@ -606,7 +618,10 @@ fn tool_annotate(args: &Value, project_root: &PathBuf) -> ToolResult {
 fn tool_annotations(args: &Value, project_root: &PathBuf) -> ToolResult {
     let target = args.get("target").and_then(|v| v.as_str());
     let session_id = args.get("session_id").and_then(|v| v.as_str());
-    let root = resolve_project(args, project_root);
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
     let config = Config::load(&root).unwrap_or_default();
 
     match context::annotations::list(&root, &config, target, session_id) {
@@ -624,7 +639,10 @@ fn tool_focus(args: &Value, project_root: &PathBuf) -> ToolResult {
         None => return ToolResult::error("Missing required parameter: paths"),
     };
     let session_id = args.get("session_id").and_then(|v| v.as_str());
-    let root = resolve_project(args, project_root);
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
     let config = Config::load(&root).unwrap_or_default();
 
     match context::workset::focus(&root, &config, &paths, session_id) {
@@ -639,7 +657,10 @@ fn tool_visit(args: &Value, project_root: &PathBuf) -> ToolResult {
         None => return ToolResult::error("Missing required parameter: paths"),
     };
     let session_id = args.get("session_id").and_then(|v| v.as_str());
-    let root = resolve_project(args, project_root);
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
     let config = Config::load(&root).unwrap_or_default();
 
     match context::workset::visit(&root, &config, &paths, session_id) {
@@ -650,7 +671,10 @@ fn tool_visit(args: &Value, project_root: &PathBuf) -> ToolResult {
 
 fn tool_forget(args: &Value, project_root: &PathBuf) -> ToolResult {
     let session_id = args.get("session_id").and_then(|v| v.as_str());
-    let root = resolve_project(args, project_root);
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
     let config = Config::load(&root).unwrap_or_default();
 
     let anns = context::annotations::clear_session(
@@ -667,7 +691,10 @@ fn tool_forget(args: &Value, project_root: &PathBuf) -> ToolResult {
 }
 
 fn tool_branch_diff(args: &Value, project_root: &PathBuf) -> ToolResult {
-    let root = resolve_project(args, project_root);
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
     let detected = crate::git::diff::default_branch(&root);
     let base = args
         .get("base")
@@ -698,7 +725,10 @@ fn tool_branch_diff(args: &Value, project_root: &PathBuf) -> ToolResult {
 }
 
 fn tool_embed(args: &Value, project_root: &PathBuf) -> ToolResult {
-    let root = resolve_project(args, project_root);
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
     let config = Config::load(&root).unwrap_or_default();
     let model = args.get("model").and_then(|v| v.as_str()).unwrap_or("nomic-embed-text");
     let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("http://localhost:11434");
@@ -726,7 +756,10 @@ fn tool_semantic_search(args: &Value, project_root: &PathBuf) -> ToolResult {
         Some(q) => q,
         None => return ToolResult::error("Missing required parameter: query"),
     };
-    let root = resolve_project(args, project_root);
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
     let config = Config::load(&root).unwrap_or_default();
 
     let embedder = match crate::embed::ollama::OllamaEmbedder::default() {
@@ -765,7 +798,10 @@ fn tool_semantic_search(args: &Value, project_root: &PathBuf) -> ToolResult {
 }
 
 fn tool_draft_commit(args: &Value, project_root: &PathBuf) -> ToolResult {
-    let root = resolve_project(args, project_root);
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
     match crate::git::diff::staged_diff(&root) {
         Ok(diff) => {
             let msg = crate::git::format::draft_commit_message(&diff);
@@ -776,7 +812,10 @@ fn tool_draft_commit(args: &Value, project_root: &PathBuf) -> ToolResult {
 }
 
 fn tool_changelog(args: &Value, project_root: &PathBuf) -> ToolResult {
-    let root = resolve_project(args, project_root);
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
     let detected = crate::git::diff::default_branch(&root);
     let base = args
         .get("base")
@@ -793,7 +832,10 @@ fn tool_changelog(args: &Value, project_root: &PathBuf) -> ToolResult {
 }
 
 fn tool_symbols(args: &Value, project_root: &PathBuf) -> ToolResult {
-    let root = resolve_project(args, project_root);
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
     let config = Config::load(&root).unwrap_or_default();
 
     let _ = index::index_directory(&root, &config);
@@ -832,7 +874,10 @@ fn tool_grep(args: &Value, project_root: &PathBuf) -> ToolResult {
         Err(e) => return ToolResult::error(format!("Invalid regex: {e}")),
     };
 
-    let root = resolve_project(args, project_root);
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
     let config = Config::load(&root).unwrap_or_default();
 
     let _ = index::index_directory(&root, &config);
@@ -947,16 +992,18 @@ fn tool_projects() -> ToolResult {
 
 /// Resolve the project root from tool arguments.
 /// Priority: 'project' (registry lookup) > 'path' (literal) > default root.
-fn resolve_project(args: &Value, default_root: &PathBuf) -> PathBuf {
+/// Errors if a project name is given but not found in the registry.
+fn resolve_project(args: &Value, default_root: &PathBuf) -> Result<PathBuf, String> {
     if let Some(project_name) = args.get("project").and_then(|v| v.as_str()) {
         if let Ok(reg) = ProjectRegistry::load() {
             if let Some(path) = reg.resolve(project_name) {
-                return path;
+                return Ok(path);
             }
         }
+        return Err(format!("Unknown project: '{project_name}'. Use 'projects' tool to list registered projects."));
     }
-    args.get("path")
+    Ok(args.get("path")
         .and_then(|v| v.as_str())
         .map(PathBuf::from)
-        .unwrap_or_else(|| default_root.clone())
+        .unwrap_or_else(|| default_root.clone()))
 }

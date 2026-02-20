@@ -16,10 +16,16 @@ pub fn run(project_root: PathBuf) -> Result<()> {
             continue;
         }
 
-        let request: JsonRpcRequest = match serde_json::from_str(&line) {
+        let request: JsonRpcRequest = match serde_json::from_str::<JsonRpcRequest>(&line) {
             Ok(r) => r,
             Err(e) => {
-                let resp = JsonRpcResponse::error(None, -32700, format!("Parse error: {e}"));
+                // Distinguish malformed JSON (-32700) from valid JSON with wrong structure (-32600)
+                let (code, label) = if serde_json::from_str::<serde_json::Value>(&line).is_ok() {
+                    (-32600, "Invalid Request")
+                } else {
+                    (-32700, "Parse error")
+                };
+                let resp = JsonRpcResponse::error(None, code, format!("{label}: {e}"));
                 send(&mut stdout, &resp)?;
                 continue;
             }
