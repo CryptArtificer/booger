@@ -1,6 +1,8 @@
 # Booger
 
-> "I found it!" — Ralph Wiggum
+<p align="center">
+  <img src="doc/rw-booger.png" width="400" alt="Ralph Wiggum: Hey, I found a booger!" />
+</p>
 
 A local code search engine, index, and working memory for AI agents.
 
@@ -135,9 +137,12 @@ so rebuilding and installing picks up changes instantly.
 
 | Tool | Description |
 |---|---|
-| `search` | Full-text search with language/path filters and context-aware ranking |
+| `search` | Full-text search with ranking, kind/language/path filters, pagination |
+| `grep` | Regex search within indexed chunks — returns matching lines with context |
+| `symbols` | List all symbols in a file/directory (structural outline) |
+| `semantic-search` | Similarity search via local embeddings (requires ollama) |
 | `index` | Index a directory (incremental) |
-| `status` | Index stats (files, chunks, languages, sizes) |
+| `status` | Index stats: files, chunks, languages, chunk kinds |
 | `annotate` | Attach notes to files/symbols with optional TTL |
 | `annotations` | List annotations |
 | `focus` | Boost search results for specific paths |
@@ -146,10 +151,15 @@ so rebuilding and installing picks up changes instantly.
 | `branch-diff` | Structural diff between branches (added/modified/removed symbols) |
 | `draft-commit` | Generate commit message from staged/unstaged changes |
 | `changelog` | Generate markdown changelog from branch diff |
+| `embed` | Generate embeddings for semantic search (ollama) |
 | `projects` | List registered projects |
 
 All tools accept an optional `project` parameter — a registered project
 name or a literal path.
+
+Search tools support `output_mode` (`content`, `files_with_matches`,
+`signatures`, `count`), `head_limit`/`offset` for pagination, `kind`
+filtering, and `max_lines` to cap content output.
 
 ## How Search Works
 
