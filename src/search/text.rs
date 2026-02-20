@@ -44,7 +44,7 @@ pub fn search(root: &Path, config: &Config, query: &SearchQuery) -> Result<Vec<S
     };
 
     // Fetch more results than requested so re-ranking has room to work
-    let fetch_limit = query.max_results * 3;
+    let fetch_limit = query.max_results * 5;
 
     let mut results = store.search(
         &query.text,
@@ -53,7 +53,41 @@ pub fn search(root: &Path, config: &Config, query: &SearchQuery) -> Result<Vec<S
         fetch_limit,
     )?;
 
-    // Apply volatile context re-ranking
+    if results.is_empty() {
+        return Ok(results);
+    }
+
+    // ── Static re-ranking: code boost + chunk size penalty ──
+
+    let avg_lines: f64 = {
+        let total: f64 = results.iter().map(|r| (r.end_line - r.start_line + 1) as f64).sum();
+        total / results.len() as f64
+    };
+
+    for result in &mut results {
+        let mut boost: f64 = 0.0;
+
+        // Code chunks (function, struct, enum, etc.) are more useful than
+        // raw/doc chunks for a code search tool. Boost structural chunks.
+        let is_code = !matches!(result.chunk_kind.as_str(), "raw" | "module");
+        if is_code {
+            boost += 3.0;
+        }
+
+        // Penalize oversized chunks. A 272-line README matches everything
+        // but is rarely what you want. Scale penalty by how much larger
+        // than average the chunk is (capped at 4.0).
+        let lines = (result.end_line - result.start_line + 1) as f64;
+        if avg_lines > 0.0 && lines > avg_lines * 2.0 {
+            let oversize_ratio = lines / avg_lines;
+            boost -= (oversize_ratio * 0.5).min(4.0);
+        }
+
+        result.rank -= boost;
+    }
+
+    // ── Volatile context re-ranking ──
+
     let focus_paths = store.get_focus_paths(query.session_id.as_deref())?;
     let visited_paths = store.get_visited_paths(query.session_id.as_deref())?;
     let annotations = store.get_annotations(None, query.session_id.as_deref())?;
@@ -62,7 +96,6 @@ pub fn search(root: &Path, config: &Config, query: &SearchQuery) -> Result<Vec<S
         for result in &mut results {
             let mut boost: f64 = 0.0;
 
-            // Focus: boost results whose file path starts with a focused path
             for fp in &focus_paths {
                 if result.file_path.starts_with(fp.as_str()) {
                     boost += 5.0;
@@ -70,7 +103,6 @@ pub fn search(root: &Path, config: &Config, query: &SearchQuery) -> Result<Vec<S
                 }
             }
 
-            // Visited: penalize results from already-seen files
             for vp in &visited_paths {
                 if result.file_path.starts_with(vp.as_str()) {
                     boost -= 3.0;
@@ -78,7 +110,6 @@ pub fn search(root: &Path, config: &Config, query: &SearchQuery) -> Result<Vec<S
                 }
             }
 
-            // Annotations: boost results that have annotations on their target
             for ann in &annotations {
                 if result.file_path == ann.target
                     || result
@@ -91,13 +122,12 @@ pub fn search(root: &Path, config: &Config, query: &SearchQuery) -> Result<Vec<S
                 }
             }
 
-            // FTS5 rank is negative (closer to 0 = better), so we subtract boost
             result.rank -= boost;
         }
-
-        results.sort_by(|a, b| a.rank.partial_cmp(&b.rank).unwrap_or(std::cmp::Ordering::Equal));
     }
 
+    // Final sort and truncate
+    results.sort_by(|a, b| a.rank.partial_cmp(&b.rank).unwrap_or(std::cmp::Ordering::Equal));
     results.truncate(query.max_results);
     Ok(results)
 }
