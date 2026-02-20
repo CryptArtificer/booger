@@ -454,7 +454,8 @@ fn format_results(results: &[crate::store::sqlite::SearchResult], opts: &FormatO
             }
             out.push('\n');
             for r in page {
-                let sig = r.content.lines().next().unwrap_or("");
+                let sig = r.signature.as_deref()
+                    .unwrap_or_else(|| r.content.lines().next().unwrap_or(""));
                 out.push_str(&format!(
                     "{}:{} [{}] {}\n",
                     r.file_path, r.start_line, r.chunk_kind, sig,
@@ -677,10 +678,10 @@ fn tool_forget(args: &Value, project_root: &PathBuf) -> ToolResult {
     };
     let config = Config::load(&root).unwrap_or_default();
 
-    let anns = context::annotations::clear_session(
+    let anns = context::annotations::clear(
         &root,
         &config,
-        session_id.unwrap_or(""),
+        session_id,
     );
     let ws = context::workset::clear(&root, &config, session_id);
 

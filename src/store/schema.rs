@@ -100,9 +100,15 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     ")?;
 
     conn.execute(
-        "INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '4')",
+        "INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '5')",
         [],
     )?;
+
+    // Migration: add signature column (v5)
+    let _ = conn.execute(
+        "ALTER TABLE chunks ADD COLUMN signature TEXT",
+        [],
+    );
 
     Ok(())
 }

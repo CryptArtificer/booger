@@ -37,9 +37,9 @@ pub fn remove(root: &Path, config: &Config, id: i64) -> Result<()> {
     }
 }
 
-pub fn clear_session(root: &Path, config: &Config, session_id: &str) -> Result<usize> {
+pub fn clear(root: &Path, config: &Config, session_id: Option<&str>) -> Result<usize> {
     match open_store_ro(root, config)? {
-        Some(store) => store.clear_session_annotations(session_id),
+        Some(store) => store.clear_annotations(session_id),
         None => Ok(0),
     }
 }

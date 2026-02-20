@@ -16,6 +16,7 @@ pub struct SearchResult {
     pub language: Option<String>,
     pub chunk_kind: String,
     pub chunk_name: Option<String>,
+    pub signature: Option<String>,
     pub start_line: i64,
     pub end_line: i64,
     pub content: String,
@@ -37,6 +38,7 @@ pub struct ChunkInsert {
     pub kind: String,
     pub name: Option<String>,
     pub content: String,
+    pub signature: Option<String>,
     pub start_line: u32,
     pub end_line: u32,
     pub start_byte: u32,
@@ -154,8 +156,8 @@ impl Store {
     /// Bulk insert chunks for a file. Call within a transaction for performance.
     pub fn insert_chunks(&self, file_id: i64, chunks: &[ChunkInsert]) -> Result<()> {
         let mut stmt = self.conn.prepare(
-            "INSERT OR REPLACE INTO chunks (file_id, kind, name, content, start_line, end_line, start_byte, end_byte)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT OR REPLACE INTO chunks (file_id, kind, name, content, signature, start_line, end_line, start_byte, end_byte)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         )?;
         for chunk in chunks {
             stmt.execute(params![
@@ -163,6 +165,7 @@ impl Store {
                 chunk.kind,
                 chunk.name,
                 chunk.content,
+                chunk.signature,
                 chunk.start_line,
                 chunk.end_line,
                 chunk.start_byte,
@@ -215,7 +218,7 @@ impl Store {
         let query = query.as_str();
 
         let mut sql = String::from(
-            "SELECT f.path, f.language, c.kind, c.name, c.start_line, c.end_line, c.content,
+            "SELECT f.path, f.language, c.kind, c.name, c.signature, c.start_line, c.end_line, c.content,
                     chunks_fts.rank
              FROM chunks_fts
              JOIN chunks c ON c.id = chunks_fts.rowid
@@ -262,10 +265,11 @@ impl Store {
                 language: row.get(1)?,
                 chunk_kind: row.get(2)?,
                 chunk_name: row.get(3)?,
-                start_line: row.get(4)?,
-                end_line: row.get(5)?,
-                content: row.get(6)?,
-                rank: row.get(7)?,
+                signature: row.get(4)?,
+                start_line: row.get(5)?,
+                end_line: row.get(6)?,
+                content: row.get(7)?,
+                rank: row.get(8)?,
             })
         })?;
 
@@ -283,7 +287,7 @@ impl Store {
         kind: Option<&str>,
     ) -> Result<Vec<SearchResult>> {
         let mut sql = String::from(
-            "SELECT f.path, f.language, c.kind, c.name, c.start_line, c.end_line, c.content
+            "SELECT f.path, f.language, c.kind, c.name, c.signature, c.start_line, c.end_line, c.content
              FROM chunks c
              JOIN files f ON f.id = c.file_id
              WHERE c.kind != 'raw'",
@@ -319,9 +323,10 @@ impl Store {
                 language: row.get(1)?,
                 chunk_kind: row.get(2)?,
                 chunk_name: row.get(3)?,
-                start_line: row.get(4)?,
-                end_line: row.get(5)?,
-                content: row.get(6)?,
+                signature: row.get(4)?,
+                start_line: row.get(5)?,
+                end_line: row.get(6)?,
+                content: row.get(7)?,
                 rank: 0.0,
             })
         })?;
@@ -341,7 +346,7 @@ impl Store {
         kind: Option<&str>,
     ) -> Result<Vec<SearchResult>> {
         let mut sql = String::from(
-            "SELECT f.path, f.language, c.kind, c.name, c.start_line, c.end_line, c.content
+            "SELECT f.path, f.language, c.kind, c.name, c.signature, c.start_line, c.end_line, c.content
              FROM chunks c
              JOIN files f ON f.id = c.file_id
              WHERE 1=1",
@@ -377,9 +382,10 @@ impl Store {
                 language: row.get(1)?,
                 chunk_kind: row.get(2)?,
                 chunk_name: row.get(3)?,
-                start_line: row.get(4)?,
-                end_line: row.get(5)?,
-                content: row.get(6)?,
+                signature: row.get(4)?,
+                start_line: row.get(5)?,
+                end_line: row.get(6)?,
+                content: row.get(7)?,
                 rank: 0.0,
             })
         })?;
@@ -483,11 +489,14 @@ impl Store {
         Ok(count)
     }
 
-    pub fn clear_session_annotations(&self, session_id: &str) -> Result<usize> {
-        let count = self.conn.execute(
-            "DELETE FROM annotations WHERE session_id = ?1",
-            params![session_id],
-        )?;
+    pub fn clear_annotations(&self, session_id: Option<&str>) -> Result<usize> {
+        let count = match session_id {
+            Some(sid) => self.conn.execute(
+                "DELETE FROM annotations WHERE session_id = ?1",
+                params![sid],
+            )?,
+            None => self.conn.execute("DELETE FROM annotations", [])?,
+        };
         Ok(count)
     }
 
@@ -575,7 +584,6 @@ impl Store {
         Ok(entries.into_iter().map(|e| e.path).collect())
     }
 
-    /// Collect index statistics.
     // ── Embeddings ──
 
     pub fn upsert_embedding(&self, chunk_id: i64, model: &str, embedding: &[f32]) -> Result<()> {
@@ -642,7 +650,7 @@ impl Store {
     /// Load a chunk by ID (for building search results from vector matches).
     pub fn chunk_by_id(&self, chunk_id: i64) -> Result<Option<SearchResult>> {
         let mut stmt = self.conn.prepare(
-            "SELECT f.path, f.language, c.kind, c.name, c.start_line, c.end_line, c.content
+            "SELECT f.path, f.language, c.kind, c.name, c.signature, c.start_line, c.end_line, c.content
              FROM chunks c JOIN files f ON c.file_id = f.id
              WHERE c.id = ?1",
         )?;
@@ -652,9 +660,10 @@ impl Store {
                 language: row.get(1)?,
                 chunk_kind: row.get(2)?,
                 chunk_name: row.get(3)?,
-                start_line: row.get(4)?,
-                end_line: row.get(5)?,
-                content: row.get(6)?,
+                signature: row.get(4)?,
+                start_line: row.get(5)?,
+                end_line: row.get(6)?,
+                content: row.get(7)?,
                 rank: 0.0,
             })
         })?;

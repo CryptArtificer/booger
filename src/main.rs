@@ -408,10 +408,10 @@ fn cmd_visit(root: &str, paths: &[String], session_id: Option<&str>) -> Result<(
 fn cmd_forget(root: &str, session_id: Option<&str>) -> Result<()> {
     let root = PathBuf::from(root);
     let config = Config::load(&root).unwrap_or_default();
-    let anns = booger::context::annotations::clear_session(
+    let anns = booger::context::annotations::clear(
         &root,
         &config,
-        session_id.unwrap_or(""),
+        session_id,
     )?;
     let ws = booger::context::workset::clear(&root, &config, session_id)?;
     eprintln!("Cleared {anns} annotations, {ws} workset entries");

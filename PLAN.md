@@ -65,10 +65,11 @@ memory.
 - [ ] Symbol-aware search (find definition, find references)
 
 ### M3 — Semantic Search
-- [ ] Embedding generation (pluggable backend: local ollama, remote OpenAI)
-- [ ] Vector storage and ANN index (usearch or custom HNSW)
+- [x] Embedding generation via local Ollama (nomic-embed-text, 768d)
+- [x] Vector storage in SQLite (f32 BLOBs, cosine similarity)
 - [ ] Hybrid ranking: text score + semantic score
-- [ ] `booger semantic <query>` CLI command
+- [x] `booger semantic <query>` CLI command
+- [x] MCP tool: `embed` and `semantic-search`
 
 ### M4 — Volatile Context Layer
 - [x] Annotations: attach notes to file/symbol/line-range (with optional TTL)
@@ -80,10 +81,15 @@ memory.
 
 ### M5 — MCP Server
 - [x] MCP protocol implementation (JSON-RPC over stdio)
-- [x] Expose tools: search, index, status, annotate, annotations, focus, visit, forget, branch-diff, draft-commit, changelog, projects
+- [x] 16 tools: search, index, status, annotate, annotations, focus, visit, forget, branch-diff, draft-commit, changelog, projects, embed, semantic-search, symbols, grep
 - [x] Expose resources: indexed project stats
-- [x] Agent-friendly structured output
+- [x] Agent-friendly structured output (content, files_with_matches, signatures, count)
 - [x] Multi-project support via `project` parameter
+- [x] Pagination: `head_limit` + `offset` across all listing tools
+- [x] Content truncation: `max_lines` for content mode
+- [x] Smart signatures: tree-sitter-extracted function/struct/trait declarations (params + return types, no body)
+- [x] Kind filtering: `kind` parameter on search, symbols, grep
+- [x] Protocol hardening: `-32600` vs `-32700` error codes, strict resource URI validation, unknown project rejection, safe serialization (no panics)
 
 ### M5.1 — Git Integration
 - [x] `branch-diff`: structural diff between branches (added/modified/removed symbols per file)
@@ -161,7 +167,7 @@ src/
   store/
     mod.rs         — storage abstraction
     sqlite.rs      — SQLite backend (open, open_if_exists, search, stats, volatile context)
-    schema.rs      — table definitions + migrations (v3)
+    schema.rs      — table definitions + migrations (v5)
   search/
     mod.rs         — query parsing + dispatch
     text.rs        — FTS5 search + code boost + context re-ranking + auto-index
@@ -173,22 +179,101 @@ src/
     mod.rs         — MCP server entry point
     server.rs      — JSON-RPC over stdio loop
     protocol.rs    — JSON-RPC + MCP type definitions
-    tools.rs       — 12 tool definitions + handlers
+    tools.rs       — 16 tool definitions + handlers
     resources.rs   — resource definitions + handlers
-
   git/
     mod.rs         — git integration entry point
     diff.rs        — structural branch diff, staged diff (tree-sitter chunk comparison)
     format.rs      — commit message + changelog generation from structural diffs
+  search/
+    semantic.rs    — vector similarity search (cosine over embedded chunks)
+  embed/
+    mod.rs         — embedding trait + cosine_similarity
+    ollama.rs      — Ollama HTTP client for embedding generation
 
 Planned:
-  search/
-    semantic.rs    — vector similarity search (M3)
-  embed/
-    mod.rs         — embedding abstraction (M3)
   graph/
     mod.rs         — dependency graph (M6)
 ```
+
+## Agent Wishlist
+
+Things I (the agent) actually want, based on daily use:
+
+### High — would use every session
+
+- **"Where is this called?"** — given a function name, find all call sites across
+  the index. Not grep — structural. Tree-sitter can find call expressions and match
+  the callee name. This is the #1 thing I waste round-trips on today: grepping,
+  filtering false positives from comments/strings, re-reading to confirm.
+
+- **Scope-aware search** — when I search for `dispatch`, I want results ranked by
+  whether the match is in a function name, a call site, a string literal, or a
+  comment. Right now they're all equal. A `scope` filter (`definition`, `call`,
+  `reference`, `comment`) would save me from reading irrelevant hits.
+
+- **"What changed since I last looked?"** — a session-aware diff. I annotate files
+  via `focus`, I work on them, but if someone else (or I in another session) edits
+  a focused file, I have no way to know. A `changed-since` tool that takes a
+  timestamp or session start and returns modified symbols would eliminate stale
+  assumptions.
+
+- **Cross-file type flow** — given a type or struct, find all functions that accept
+  it, return it, or contain it as a field. This is the structural version of "who
+  touches this data?" and would be transformative for understanding unfamiliar
+  codebases.
+
+- **Batch tool calls** — MCP lets the client batch, but from the agent side I often
+  want to say "search X AND get symbols for the top 3 result files" in one round
+  trip. A `pipeline` or `multi` tool that accepts an array of tool calls and returns
+  all results would cut my latency in half for exploratory workflows.
+
+### Medium — would use often
+
+- **Hybrid ranking** — combine FTS + semantic scores. Right now I have to choose
+  between `search` (keyword) and `semantic-search` (meaning). A single query that
+  blends both would give me the best of both without two round-trips.
+
+- **Inline annotations in results** — when I've annotated `src/mcp/server.rs:51`
+  with "dispatch entry point — check error handling", I want that note to appear
+  *in* search results that include that line range. Right now annotations exist
+  in a separate silo and I have to remember to check them.
+
+- **Stale embedding detection** — after re-indexing, some chunks change but their
+  embeddings are from the old content. A `embed --stale` or automatic invalidation
+  on content change would keep semantic search honest.
+
+- **Directory summaries** — `symbols` on a directory gives me every symbol in every
+  file. What I often want is a higher-level view: "this directory has 12 files, 47
+  functions, 8 structs, main responsibilities appear to be X, Y, Z". Pre-computed
+  or on-demand directory-level summaries would help me orient faster in large
+  codebases.
+
+- **Test association** — given a function, find its tests (by naming convention,
+  proximity, or import graph). Given a test, find what it tests. This is trivial
+  for humans ("it's right below") but hard for agents without structural support.
+
+### Low — nice to have
+
+- **Workspace-level search** — search across all registered projects at once, with
+  results tagged by project. Useful when working on a monorepo-adjacent setup
+  where related code lives in sibling repos.
+
+- **Diff-aware search boost** — if I'm on a branch with changes, automatically
+  boost search results from changed files (like auto-focus, but implicit and
+  always-on). The branch-diff + focus combo works today but requires explicit
+  invocation.
+
+- **Undo for volatile context** — I sometimes focus the wrong path or add a bad
+  annotation. A simple undo/history for context mutations would save cleanup time.
+
+- **Streaming results** — for large result sets, stream results as they're found
+  rather than buffering everything. Particularly valuable for `grep` on large
+  indexes where I only need the first few matches.
+
+- **Persistent sessions** — right now sessions are just string labels with no
+  persistence across restarts. Named sessions that survive server restarts (stored
+  in SQLite) would let me resume context across conversation boundaries.
 
 ## Non-Goals (for now)
 

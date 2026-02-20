@@ -86,7 +86,10 @@ fn handle_initialize(request: &JsonRpcRequest) -> JsonRpcResponse {
             version: env!("CARGO_PKG_VERSION").into(),
         },
     };
-    JsonRpcResponse::success(request.id.clone(), serde_json::to_value(result).unwrap())
+    match serde_json::to_value(result) {
+        Ok(v) => JsonRpcResponse::success(request.id.clone(), v),
+        Err(e) => JsonRpcResponse::error(request.id.clone(), -32603, format!("Internal error: {e}")),
+    }
 }
 
 fn handle_tools_list(request: &JsonRpcRequest) -> JsonRpcResponse {
@@ -107,7 +110,10 @@ fn handle_tools_call(request: &JsonRpcRequest, project_root: &PathBuf) -> JsonRp
         .unwrap_or(json!({}));
 
     let result = tools::call_tool(name, &args, project_root);
-    JsonRpcResponse::success(request.id.clone(), serde_json::to_value(result).unwrap())
+    match serde_json::to_value(result) {
+        Ok(v) => JsonRpcResponse::success(request.id.clone(), v),
+        Err(e) => JsonRpcResponse::error(request.id.clone(), -32603, format!("Internal error: {e}")),
+    }
 }
 
 fn handle_resources_list(request: &JsonRpcRequest, project_root: &PathBuf) -> JsonRpcResponse {

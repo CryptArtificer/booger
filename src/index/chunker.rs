@@ -50,28 +50,73 @@ const CONTAINER_KINDS: &[&str] = &[
     "impl", "class", "trait", "module", "interface",
 ];
 
+/// Extract a clean signature from a tree-sitter node.
+/// Finds the body block and returns everything before it, trimmed.
+/// Falls back to the first line for nodes without a clear body.
+fn extract_signature(node: &Node, source: &str) -> Option<String> {
+    let body_fields = ["body", "block"];
+    let body_node = body_fields.iter()
+        .find_map(|f| node.child_by_field_name(f));
+
+    if let Some(body) = body_node {
+        let sig_end = body.start_byte();
+        let sig_start = node.start_byte();
+        if sig_end > sig_start {
+            let raw = &source[sig_start..sig_end];
+            let sig = raw.trim_end().to_string();
+            if !sig.is_empty() {
+                return Some(sig);
+            }
+        }
+    }
+
+    // For struct/enum body: look for field_declaration_list, variant_list, etc.
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        let ck = child.kind();
+        if ck.contains("body") || ck.contains("field_declaration_list")
+            || ck.contains("variant_list") || ck == "declaration_list"
+            || ck == "class_body" || ck == "object_type"
+            || ck == "enum_body"
+        {
+            let sig_end = child.start_byte();
+            let sig_start = node.start_byte();
+            if sig_end > sig_start {
+                let raw = &source[sig_start..sig_end];
+                let sig = raw.trim_end().to_string();
+                if !sig.is_empty() {
+                    return Some(sig);
+                }
+            }
+        }
+    }
+
+    let text = &source[node.byte_range()];
+    text.lines().next().map(|l| l.trim_end().to_string())
+}
+
 fn collect_chunks(node: Node, source: &[u8], lang: &str, chunks: &mut Vec<ChunkInsert>) {
     let source_str = std::str::from_utf8(source).unwrap_or("");
 
     if let Some((kind, name)) = classify_node(&node, source_str, lang) {
         let is_container = CONTAINER_KINDS.iter().any(|k| kind.starts_with(k));
+        let signature = extract_signature(&node, source_str);
 
         if is_container {
-            // For containers: emit a signature-only chunk (first few lines)
-            // then recurse to extract child methods/functions individually.
             let text = &source_str[node.byte_range()];
             let start = node.start_position();
-            let signature: String = text.lines().take(3).collect::<Vec<_>>().join("\n");
-            let sig_lines = signature.lines().count() as u32;
+            let content: String = text.lines().take(3).collect::<Vec<_>>().join("\n");
+            let content_lines = content.lines().count() as u32;
 
             chunks.push(ChunkInsert {
                 kind: kind.clone(),
                 name,
-                content: signature,
+                content,
+                signature,
                 start_line: (start.row + 1) as u32,
-                end_line: (start.row as u32) + sig_lines,
+                end_line: (start.row as u32) + content_lines,
                 start_byte: node.start_byte() as u32,
-                end_byte: (node.start_byte() + sig_lines as usize * 80).min(node.end_byte()) as u32,
+                end_byte: (node.start_byte() + content_lines as usize * 80).min(node.end_byte()) as u32,
             });
 
             let mut cursor = node.walk();
@@ -87,6 +132,7 @@ fn collect_chunks(node: Node, source: &[u8], lang: &str, chunks: &mut Vec<ChunkI
                 kind,
                 name,
                 content: text.to_string(),
+                signature,
                 start_line: (start.row + 1) as u32,
                 end_line: (end.row + 1) as u32,
                 start_byte: node.start_byte() as u32,
@@ -312,6 +358,7 @@ fn raw_chunk(content: &str) -> Vec<ChunkInsert> {
         kind: "raw".to_string(),
         name: None,
         content: content.to_string(),
+        signature: None,
         start_line: 1,
         end_line: line_count.max(1),
         start_byte: 0,
