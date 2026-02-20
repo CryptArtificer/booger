@@ -15,24 +15,24 @@ memory.
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                  Agent (MCP / CLI)               │
+│                 Agent (MCP / CLI)               │
 ├─────────────────────────────────────────────────┤
-│                   Query Engine                   │
-│         (semantic + structural + volatile)        │
+│                  Query Engine                   │
+│       (semantic + structural + volatile)        │
 ├──────────────────┬──────────────────────────────┤
-│  Persistent Layer │     Volatile Layer           │
+│ Persistent Layer │     Volatile Layer           │
 │  ─────────────── │     ──────────────           │
-│  Code chunks      │     Annotations (TTL)        │
-│  Symbol index     │     Intents / goals          │
-│  Dependency graph  │     Working set / focus      │
-│  Embeddings       │     Visited / blacklist       │
+│ Code chunks      │     Annotations (TTL)        │
+│ Symbol index     │     Intents / goals          │
+│ Dependency graph │     Working set / focus      │
+│ Embeddings       │     Visited / blacklist      │
 ├──────────────────┴──────────────────────────────┤
-│                   Storage                        │
-│           SQLite + vector index                  │
+│                   Storage                       │
+│           SQLite + vector index                 │
 ├─────────────────────────────────────────────────┤
-│                  Ingestion                       │
-│    Tree-sitter chunking + incremental updates    │
-│    Filesystem watcher / git-diff based           │
+│                  Ingestion                      │
+│    Tree-sitter chunking + incremental updates   │
+│    Filesystem watcher / git-diff based          │
 └─────────────────────────────────────────────────┘
 ```
 
