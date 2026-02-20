@@ -1435,29 +1435,39 @@ fn tool_workspace_search(args: &Value, default_root: &PathBuf) -> ToolResult {
     let kind = args.get("kind").and_then(|v| v.as_str()).map(String::from);
     let (output_mode, offset, head_limit, max_lines) = parse_format_opts(args, "content");
 
-    let per_project = (max_results * 2 / projects.len()).max(5);
+    let project_count = projects.len();
+    let per_project = (max_results * 2 / project_count).max(5);
 
     type SR = crate::store::sqlite::SearchResult;
+
+    let handles: Vec<_> = projects.into_iter().map(|(name, path)| {
+        let lang = language.clone();
+        let k = kind.clone();
+        let q = query.to_string();
+        let pp = per_project;
+        std::thread::spawn(move || {
+            let config = Config::load(&path).unwrap_or_default();
+            let mut search_query = SearchQuery::new(&q);
+            search_query.language = lang;
+            search_query.kind = k;
+            search_query.max_results = pp;
+            let results = crate::search::text::search(&path, &config, &search_query)
+                .unwrap_or_default();
+            results.into_iter().map(|r| (name.clone(), r)).collect::<Vec<_>>()
+        })
+    }).collect();
+
     let mut all_results: Vec<(String, SR)> = Vec::new();
-
-    for (name, path) in &projects {
-        let config = Config::load(path).unwrap_or_default();
-        let mut search_query = SearchQuery::new(query);
-        search_query.language = language.clone();
-        search_query.kind = kind.clone();
-        search_query.max_results = per_project;
-
-        if let Ok(results) = crate::search::text::search(path, &config, &search_query) {
-            for r in results {
-                all_results.push((name.clone(), r));
-            }
+    for h in handles {
+        if let Ok(batch) = h.join() {
+            all_results.extend(batch);
         }
     }
 
     if all_results.is_empty() {
         return ToolResult::success(format!(
             "No results found across {} project(s).",
-            projects.len()
+            project_count
         ));
     }
 

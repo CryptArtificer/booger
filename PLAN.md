@@ -255,9 +255,9 @@ Things I (the agent) actually want, based on daily use:
 
 ### Low — nice to have
 
-- **Workspace-level search** — search across all registered projects at once, with
-  results tagged by project. Useful when working on a monorepo-adjacent setup
-  where related code lives in sibling repos.
+- [x] **Workspace-level search** — `workspace-search` tool: searches all registered
+  projects in parallel (threaded), merges results ranked globally, tags each hit
+  with its project name. Supports all output modes, pagination, and filters.
 
 - **Diff-aware search boost** — if I'm on a branch with changes, automatically
   boost search results from changed files (like auto-focus, but implicit and

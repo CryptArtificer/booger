@@ -20,7 +20,7 @@ for structural chunking, stores everything in [SQLite](https://sqlite.org/) with
 [MCP](https://modelcontextprotocol.io/) or CLI. It's designed to be the tool that
 AI agents use to efficiently find and reason about code.
 
-18 tools. 7 languages. Structural search, references, git-aware diffs, semantic
+19 tools. 7 languages. Structural search, references, git-aware diffs, semantic
 embeddings, volatile working memory — all in a single static binary.
 
 **[Live Demo](doc/demo.md)** &middot;
