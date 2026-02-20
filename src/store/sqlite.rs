@@ -184,7 +184,9 @@ impl Store {
         path_prefix: Option<&str>,
         max_results: usize,
     ) -> Result<Vec<SearchResult>> {
-        // Build the WHERE clause dynamically based on filters
+        let query = sanitize_fts_query(query);
+        let query = query.as_str();
+
         let mut sql = String::from(
             "SELECT f.path, f.language, c.kind, c.name, c.start_line, c.end_line, c.content,
                     chunks_fts.rank
@@ -448,4 +450,56 @@ impl Store {
             languages,
         })
     }
+}
+
+/// Sanitize user input for FTS5 MATCH queries.
+/// FTS5 treats `-`, `AND`, `OR`, `NOT`, `NEAR` as operators.
+/// We quote bare terms that contain special characters, and preserve
+/// user-supplied phrases (already in double quotes).
+fn sanitize_fts_query(input: &str) -> String {
+    let mut result = String::new();
+    let mut chars = input.chars().peekable();
+
+    while let Some(&ch) = chars.peek() {
+        if ch == '"' {
+            // Pass through quoted phrases verbatim
+            result.push(ch);
+            chars.next();
+            while let Some(&c) = chars.peek() {
+                result.push(c);
+                chars.next();
+                if c == '"' {
+                    break;
+                }
+            }
+        } else if ch.is_whitespace() {
+            result.push(ch);
+            chars.next();
+        } else {
+            // Collect a bare token
+            let mut token = String::new();
+            while let Some(&c) = chars.peek() {
+                if c.is_whitespace() || c == '"' {
+                    break;
+                }
+                token.push(c);
+                chars.next();
+            }
+            let needs_quoting = token.contains('-')
+                || token.contains('.')
+                || token.contains('/')
+                || token.contains(':')
+                || token.contains('*')
+                || token.contains('^');
+            if needs_quoting {
+                result.push('"');
+                result.push_str(&token);
+                result.push('"');
+            } else {
+                result.push_str(&token);
+            }
+        }
+    }
+
+    result
 }
