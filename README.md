@@ -23,6 +23,34 @@ AI agents use to efficiently find and reason about code.
 19 tools. 7 languages. Structural search, references, git-aware diffs, semantic
 embeddings, volatile working memory — all in a single static binary.
 
+## Why Booger?
+
+AI agents spend most of their tokens **finding** code, not **writing** it.
+A typical search-and-understand cycle without booger:
+
+| Step | Without booger | With booger |
+|---|---|---|
+| Find relevant code across 5 repos | `rg` / `find` × 5 calls, ~10,000–25,000 tokens of raw output | `workspace-search` — 1 call, ~190 tokens |
+| Understand structure of a module | Read entire files, ~2,000 tokens each | `symbols` — one-line signatures, ~200 tokens |
+| Find who calls a function | `rg` + manually filter definitions, comments, strings | `references` — classified as definition/call/import/type |
+| Check what changed on a branch | `git diff` — raw line diff, thousands of tokens | `branch-diff` — symbol-level: added/modified/removed |
+| Generate a commit message | Read the diff, reason about it | `draft-commit` — structural summary, done |
+
+**50–100× token savings per search.** Over a typical coding session with
+5–10 searches, that's the difference between 1,000 tokens and 100,000 tokens
+for the same codebase understanding.
+
+### Performance
+
+| Metric | Value |
+|---|---|
+| Full index (642 files, 5 projects) | ~2 seconds |
+| Incremental re-index (no changes) | ~20 ms |
+| Workspace search (4,699 chunks, 5 projects, threaded) | ~40 ms |
+| Single-project search | ~30 ms |
+| Memory (peak RSS, workspace search) | ~14 MB |
+| Binary size | 14 MB |
+
 **[Live Demo](doc/demo.md)** &middot;
 **[Architecture Diagrams](doc/architecture.md)** &middot;
 **[Concepts & Technology](doc/concepts.md)** &middot;
@@ -364,7 +392,7 @@ type = "none"                 # "ollama" or "openai"
 Agent (Cursor / Codex / CLI)
   → MCP (JSON-RPC 2.0 over stdio)
     → dispatch (route by method)
-      → 18 tool handlers
+      → 19 tool handlers
         → tree-sitter (structural parsing, 7 languages)
         → SQLite + FTS5 (storage, indexing, search, volatile context)
         → git (structural branch diffs)
