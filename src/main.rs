@@ -68,6 +68,12 @@ enum Commands {
         #[arg(default_value = ".")]
         path: String,
     },
+    /// Start MCP server (JSON-RPC over stdio, for agent integration)
+    Mcp {
+        /// Project root directory
+        #[arg(default_value = ".")]
+        root: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -84,6 +90,7 @@ fn main() -> Result<()> {
             println!("Semantic search: {query}");
             todo!("M3: semantic search")
         }
+        Commands::Mcp { root } => cmd_mcp(&root),
         Commands::Annotate { target, note } => {
             println!("Annotating {target}: {note}");
             todo!("M4: volatile context")
@@ -189,6 +196,13 @@ fn cmd_search(
     }
 
     Ok(())
+}
+
+fn cmd_mcp(root: &str) -> Result<()> {
+    let project_root = PathBuf::from(root)
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from(root));
+    booger::mcp::server::run(project_root)
 }
 
 fn cmd_init(path: &str) -> Result<()> {
