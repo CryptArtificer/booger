@@ -36,11 +36,28 @@ A typical search-and-understand cycle without booger:
 | Check what changed on a branch | `git diff` — raw line diff, thousands of tokens | `branch-diff` — symbol-level: added/modified/removed |
 | Generate a commit message | Read the diff, reason about it | `draft-commit` — structural summary, done |
 
-**50–100× token savings per search.** Over a typical coding session with
-5–10 searches, that's the difference between 1,000 tokens and 100,000 tokens
-for the same codebase understanding.
+### Measured Token Savings
+
+Benchmark: `workspace-search` (signatures mode, 10 results) vs `rg` across
+5 real projects (642 files, 4,699 chunks). Tokens estimated at ~4 chars/token.
+
+| Query | `rg` output | `rg` est. tokens | booger output | booger est. tokens | Reduction |
+|---|---|---|---|---|---|
+| `parse` | 807,353 chars | ~201,838 | 984 chars | ~246 | **820x** |
+| `error` | 2,658,455 chars | ~664,613 | 777 chars | ~194 | **3,421x** |
+| `config` | 3,731,276 chars | ~932,819 | 1,004 chars | ~251 | **3,716x** |
+| `search` | 110,263,111 chars | ~27,565,777 | 1,200 chars | ~300 | **91,885x** |
+| `dispatch` | 975,924 chars | ~243,981 | 858 chars | ~214 | **1,137x** |
+| `schema` | 291,142 chars | ~72,785 | 1,079 chars | ~269 | **269x** |
+| `test` | 39,512,778 chars | ~9,878,194 | 933 chars | ~233 | **42,350x** |
+
+**Average: 20,514x reduction.** Over a typical session with 5–10 searches,
+that's the difference between ~1,000 tokens and ~20,000,000 tokens for the
+same codebase understanding.
 
 ### Performance
+
+Measured on 5 projects (642 files, 4,699 indexed chunks, Apple Silicon):
 
 | Metric | Value |
 |---|---|
@@ -48,6 +65,7 @@ for the same codebase understanding.
 | Incremental re-index (no changes) | ~20 ms |
 | Workspace search (4,699 chunks, 5 projects, threaded) | ~40 ms |
 | Single-project search | ~30 ms |
+| Stress test (120 calls, 20 parallel clients) | p50: 736ms, p95: 1,091ms, 0 failures |
 | Memory (peak RSS, workspace search) | ~14 MB |
 | Binary size | 14 MB |
 
