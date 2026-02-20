@@ -10,7 +10,7 @@ pub fn focus(
     paths: &[String],
     session_id: Option<&str>,
 ) -> Result<()> {
-    let store = open_store(root, config)?;
+    let store = open_store_rw(root, config)?;
     for p in paths {
         store.add_to_workset(p, "focus", session_id)?;
     }
@@ -23,7 +23,7 @@ pub fn visit(
     paths: &[String],
     session_id: Option<&str>,
 ) -> Result<()> {
-    let store = open_store(root, config)?;
+    let store = open_store_rw(root, config)?;
     for p in paths {
         store.add_to_workset(p, "visited", session_id)?;
     }
@@ -31,11 +31,15 @@ pub fn visit(
 }
 
 pub fn unfocus(root: &Path, config: &Config, paths: &[String]) -> Result<()> {
-    let store = open_store(root, config)?;
-    for p in paths {
-        store.remove_from_workset(p, "focus")?;
+    match open_store_ro(root, config)? {
+        Some(store) => {
+            for p in paths {
+                store.remove_from_workset(p, "focus")?;
+            }
+            Ok(())
+        }
+        None => Ok(()),
     }
-    Ok(())
 }
 
 pub fn list(
@@ -44,19 +48,31 @@ pub fn list(
     kind: Option<&str>,
     session_id: Option<&str>,
 ) -> Result<Vec<WorksetEntry>> {
-    let store = open_store(root, config)?;
-    store.get_workset(kind, session_id)
+    match open_store_ro(root, config)? {
+        Some(store) => store.get_workset(kind, session_id),
+        None => Ok(Vec::new()),
+    }
 }
 
 pub fn clear(root: &Path, config: &Config, session_id: Option<&str>) -> Result<usize> {
-    let store = open_store(root, config)?;
-    store.clear_workset(session_id)
+    match open_store_ro(root, config)? {
+        Some(store) => store.clear_workset(session_id),
+        None => Ok(0),
+    }
 }
 
-fn open_store(root: &Path, config: &Config) -> Result<Store> {
+fn open_store_rw(root: &Path, config: &Config) -> Result<Store> {
     let root = root
         .canonicalize()
         .with_context(|| format!("resolving path {}", root.display()))?;
     let storage_dir = config.storage_dir(&root);
     Store::open(&storage_dir)
+}
+
+fn open_store_ro(root: &Path, config: &Config) -> Result<Option<Store>> {
+    let root = root
+        .canonicalize()
+        .with_context(|| format!("resolving path {}", root.display()))?;
+    let storage_dir = config.storage_dir(&root);
+    Store::open_if_exists(&storage_dir)
 }

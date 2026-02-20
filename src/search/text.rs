@@ -38,7 +38,10 @@ pub fn search(root: &Path, config: &Config, query: &SearchQuery) -> Result<Vec<S
     let _ = index::index_directory(&root, config);
 
     let storage_dir = config.storage_dir(&root);
-    let store = Store::open(&storage_dir)?;
+    let store = match Store::open_if_exists(&storage_dir)? {
+        Some(s) => s,
+        None => return Ok(Vec::new()),
+    };
 
     // Fetch more results than requested so re-ranking has room to work
     let fetch_limit = query.max_results * 3;

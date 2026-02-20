@@ -103,12 +103,14 @@ pub fn index_directory(root: &Path, config: &Config) -> Result<IndexResult> {
     Ok(result)
 }
 
-/// Get index statistics for a directory.
+/// Get index statistics for a directory. Returns empty stats if no index exists.
 pub fn index_status(root: &Path, config: &Config) -> Result<crate::store::sqlite::IndexStats> {
     let root = root
         .canonicalize()
         .with_context(|| format!("resolving path {}", root.display()))?;
     let storage_dir = config.storage_dir(&root);
-    let store = Store::open(&storage_dir)?;
-    store.stats(&storage_dir)
+    match Store::open_if_exists(&storage_dir)? {
+        Some(store) => store.stats(&storage_dir),
+        None => Ok(crate::store::sqlite::IndexStats::empty()),
+    }
 }

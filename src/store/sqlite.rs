@@ -70,7 +70,20 @@ pub struct IndexStats {
     pub languages: Vec<(String, i64)>,
 }
 
+impl IndexStats {
+    pub fn empty() -> Self {
+        Self {
+            file_count: 0,
+            chunk_count: 0,
+            total_size_bytes: 0,
+            db_size_bytes: 0,
+            languages: Vec::new(),
+        }
+    }
+}
+
 impl Store {
+    /// Open (or create) the database, running migrations. Use for write paths.
     pub fn open(storage_dir: &Path) -> Result<Self> {
         std::fs::create_dir_all(storage_dir)
             .with_context(|| format!("creating storage dir {}", storage_dir.display()))?;
@@ -79,6 +92,19 @@ impl Store {
             .with_context(|| format!("opening database at {}", db_path.display()))?;
         schema::run_migrations(&conn)?;
         Ok(Self { conn })
+    }
+
+    /// Open the database only if it already exists. Returns None otherwise.
+    /// Use for read-only paths to avoid creating empty databases as a side effect.
+    pub fn open_if_exists(storage_dir: &Path) -> Result<Option<Self>> {
+        let db_path = storage_dir.join("index.db");
+        if !db_path.exists() {
+            return Ok(None);
+        }
+        let conn = Connection::open(&db_path)
+            .with_context(|| format!("opening database at {}", db_path.display()))?;
+        schema::run_migrations(&conn)?;
+        Ok(Some(Self { conn }))
     }
 
     /// Look up a file by path. Returns None if not indexed.
