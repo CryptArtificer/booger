@@ -47,6 +47,7 @@ memory.
 ### M1 — Ingestion & Storage
 - [x] Walk directory tree, respect .gitignore
 - [x] Tree-sitter parsing: extract functions, structs, classes, etc.
+- [x] Method-level extraction: impl/class/trait/interface blocks decomposed into child methods
 - [x] Chunk storage in SQLite (file path, byte range, line range, content, language, kind)
 - [x] Incremental updates: hash-based change detection (BLAKE3 content hash)
 - [x] `booger index <path>` CLI command
@@ -57,6 +58,10 @@ memory.
 - [x] `booger search <query>` CLI command
 - [x] Ranked results with context snippets
 - [x] JSON output mode for agent consumption
+- [x] Auto-index on search: incrementally updates stale/missing index before querying
+- [x] Code boost: structural code chunks ranked above raw/doc chunks (+3)
+- [x] Chunk size penalty: oversized chunks (READMEs, etc.) penalized (up to -4)
+- [x] FTS5 query sanitization: hyphens, dots, slashes auto-quoted
 - [ ] Symbol-aware search (find definition, find references)
 
 ### M3 — Semantic Search
@@ -87,6 +92,8 @@ memory.
 
 ### M7 — Polish
 - [x] Multi-project registry (~/.booger/projects.json)
+- [x] Read-only operations (status, search, list, forget) don't create .booger/ as side effect
+- [x] Hot-reload proxy script for MCP development (booger-proxy.sh)
 - [ ] Filesystem watcher for live re-indexing
 - [ ] Remote index sharing (optional)
 - [ ] Performance tuning (large repos: 100k+ files)
@@ -129,44 +136,43 @@ memory.
    Local uses SQLite + filesystem, cloud swaps in S3 + managed DB. AWS is
    the primary target; other providers via the same trait abstraction.
 
-## Module Structure (planned)
+## Module Structure
 
 ```
 src/
   main.rs          — CLI entry point (clap)
-  lib.rs           — public API / core orchestration
-  config.rs        — configuration loading
+  lib.rs           — public API / module re-exports
+  config.rs        — configuration + project registry
   index/
-    mod.rs         — indexing orchestration
+    mod.rs         — indexing orchestration, auto-index
     walker.rs      — directory traversal + .gitignore
-    chunker.rs     — tree-sitter chunking
-    hasher.rs      — content hashing for incremental updates
+    chunker.rs     — tree-sitter chunking (method-level extraction)
+    hasher.rs      — BLAKE3 content hashing
   store/
     mod.rs         — storage abstraction
-    sqlite.rs      — SQLite backend
-    schema.rs      — table definitions + migrations
+    sqlite.rs      — SQLite backend (open, open_if_exists, search, stats, volatile context)
+    schema.rs      — table definitions + migrations (v3)
   search/
     mod.rs         — query parsing + dispatch
-    text.rs        — full-text search (FTS5 / tantivy)
-    semantic.rs    — vector similarity search
-    ranking.rs     — hybrid ranking / result merging
-  embed/
-    mod.rs         — embedding abstraction
-    ollama.rs      — local ollama backend
-    openai.rs      — OpenAI backend
+    text.rs        — FTS5 search + code boost + context re-ranking + auto-index
   context/
     mod.rs         — volatile layer orchestration
-    annotations.rs — notes attached to code locations
-    intent.rs      — session-level goals
-    workset.rs     — focus / visited tracking
+    annotations.rs — notes attached to code locations (RW/RO split)
+    workset.rs     — focus / visited tracking (RW/RO split)
   mcp/
-    mod.rs         — MCP server implementation
-    tools.rs       — tool definitions
-    resources.rs   — resource definitions
+    mod.rs         — MCP server entry point
+    server.rs      — JSON-RPC over stdio loop
+    protocol.rs    — JSON-RPC + MCP type definitions
+    tools.rs       — 9 tool definitions + handlers
+    resources.rs   — resource definitions + handlers
+
+Planned:
+  search/
+    semantic.rs    — vector similarity search (M3)
+  embed/
+    mod.rs         — embedding abstraction (M3)
   graph/
-    mod.rs         — dependency graph
-    extract.rs     — import extraction per language
-    query.rs       — graph traversal queries
+    mod.rs         — dependency graph (M6)
 ```
 
 ## Non-Goals (for now)

@@ -9,6 +9,8 @@ stores everything in SQLite with FTS5, and exposes it all via MCP or CLI.
 It's designed to be the tool that agents use to efficiently find and
 reason about code.
 
+One binary, zero dependencies, zero background processes.
+
 ## Install
 
 ```bash
@@ -18,15 +20,19 @@ cargo install --path .
 ## Quick Start
 
 ```bash
-# Index a project
-booger index /path/to/project
-
-# Search for code
+# Search a project (auto-indexes if needed)
 booger search "parse config" --language rust
+
+# Explicit indexing (incremental — only re-processes changed files)
+booger index /path/to/project
 
 # JSON output (for scripts/agents)
 booger search "hash file" --json
 ```
+
+Searching auto-indexes: if the index is missing or stale, booger
+incrementally updates it before returning results. You never need
+to manually run `booger index`.
 
 ## Multi-Project
 
@@ -64,6 +70,25 @@ Add to `.cursor/mcp.json`:
 }
 ```
 
+### Development Setup (hot-reload)
+
+For active development, use the proxy script so `cargo install`
+takes effect immediately without restarting the MCP session:
+
+```json
+{
+  "mcpServers": {
+    "booger": {
+      "command": "/path/to/booger/booger-proxy.sh",
+      "args": ["/path/to/default/project"]
+    }
+  }
+}
+```
+
+The proxy spawns a fresh `booger` process per JSON-RPC request,
+so rebuilding and installing picks up changes instantly.
+
 ### Available MCP Tools
 
 | Tool | Description |
@@ -80,6 +105,29 @@ Add to `.cursor/mcp.json`:
 
 All tools accept an optional `project` parameter — a registered project
 name or a literal path.
+
+## How Search Works
+
+```
+Query
+  → auto-index (walk + BLAKE3 hash, skip unchanged files)
+  → FTS5 full-text search (Porter stemmer, BM25 ranking)
+  → static re-ranking:
+      code chunks boosted over docs/raw (+3)
+      oversized chunks penalized (up to -4)
+  → volatile context re-ranking:
+      focused paths boosted (+5)
+      visited paths penalized (-3)
+      annotated targets boosted (+2)
+  → return top N results
+```
+
+Search results are individual functions, structs, and classes —
+not entire files. Container blocks (impl, class, trait) are split
+into their child methods so you get precisely the code you need.
+
+Read-only operations (status, search on indexed project, annotations
+list, forget) never create a `.booger/` directory as a side effect.
 
 ## Volatile Context
 
@@ -110,9 +158,12 @@ booger forget
 
 ## Supported Languages
 
-Tree-sitter structural chunking (functions, structs, classes, etc.):
+Tree-sitter structural chunking (functions, structs, classes, methods):
 
 Rust, Python, JavaScript, TypeScript, TSX, Go, C
+
+Container blocks (impl, class, trait, interface) are decomposed into
+individual method chunks plus a signature-only chunk for the container.
 
 All other file types are indexed as whole-file chunks and are still
 searchable via FTS5.
@@ -137,20 +188,29 @@ type = "none"       # "ollama" or "openai" when semantic search is ready
 ## Architecture
 
 ```
-Agent (MCP / CLI)
-    │
-    ▼
-Query Engine (FTS5 + volatile context re-ranking)
-    │
-    ├── Persistent Layer: code chunks, symbol index, embeddings
-    │       └── SQLite (WAL mode, FTS5, auto-synced triggers)
-    │
-    └── Volatile Layer: annotations, focus/visited, intents
-            └── SQLite (same DB, session-scoped)
-    │
-    ▼
-Ingestion (tree-sitter chunking, BLAKE3 hashing, incremental)
+Cursor (or any MCP client)
+  → MCP (JSON-RPC over stdio)
+    → booger-proxy.sh (optional, for dev hot-reload)
+      → booger mcp (Rust binary)
+        → tree-sitter (parse code into function-level chunks)
+        → SQLite + FTS5 (store, index, search, volatile context)
+          → .booger/index.db (single file, lives next to your repo)
 ```
+
+## Data Flow
+
+```
+Files on disk
+  → index (walk + hash + tree-sitter parse → SQLite + FTS5)
+  → search (FTS5 query → BM25 → code boost → context re-rank)
+  → volatile context (annotations, focus, visited — session-scoped)
+  → forget (cleanup)
+```
+
+Everything is a single SQLite file per project. No external services,
+no background processes, no daemon. Each MCP request is a fresh process
+invocation — stateless from the OS perspective, stateful from the data
+perspective.
 
 ## License
 
