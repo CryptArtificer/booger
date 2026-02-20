@@ -24,6 +24,7 @@ AI agents use to efficiently find and reason about code.
 embeddings, volatile working memory — all in a single static binary.
 
 **[Architecture Diagrams](doc/architecture.md)** &middot;
+**[Concepts & Technology](doc/concepts.md)** &middot;
 **[Project Plan](PLAN.md)**
 
 ## Install
