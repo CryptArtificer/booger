@@ -45,12 +45,13 @@ fn send(out: &mut impl Write, response: &JsonRpcResponse) -> Result<()> {
 fn dispatch(request: &JsonRpcRequest, project_root: &PathBuf) -> Option<JsonRpcResponse> {
     match request.method.as_str() {
         "initialize" => Some(handle_initialize(request)),
-        "initialized" => None, // notification, no response
+        "initialized" | "notifications/initialized" => None,
         "ping" => Some(JsonRpcResponse::success(request.id.clone(), json!({}))),
         "tools/list" => Some(handle_tools_list(request)),
         "tools/call" => Some(handle_tools_call(request, project_root)),
         "resources/list" => Some(handle_resources_list(request, project_root)),
         "resources/read" => Some(handle_resources_read(request, project_root)),
+        _ if request.id.is_none() => None, // ignore unknown notifications
         _ => Some(JsonRpcResponse::error(
             request.id.clone(),
             -32601,
