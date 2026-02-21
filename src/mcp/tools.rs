@@ -804,32 +804,16 @@ fn tool_search(args: &Value, project_root: &PathBuf) -> ToolResult {
     match crate::search::text::search(&root, &config, &search_query) {
         Ok(results) => {
             if results.is_empty() {
-                let msg = explain_empty_search(&root, &config, search_query.path_prefix.as_deref());
+                let msg = crate::search::text::explain_empty_search(
+                    &root,
+                    &config,
+                    search_query.path_prefix.as_deref(),
+                );
                 return ToolResult::success(msg);
             }
             ToolResult::success(format_results(&results, &opts))
         }
         Err(e) => ToolResult::error(format!("Search failed: {e}")),
-    }
-}
-
-/// Explain why search returned no results: path has no chunks vs no matches.
-fn explain_empty_search(root: &PathBuf, config: &Config, path_prefix: Option<&str>) -> String {
-    let storage_dir = config.storage_dir(&root.canonicalize().unwrap_or_else(|_| root.clone()));
-    match Store::open_if_exists(&storage_dir) {
-        Ok(Some(store)) => {
-            match store.path_has_chunks(path_prefix) {
-                Ok(false) => {
-                    if path_prefix.is_some() {
-                        "Path prefix has no indexed files.".into()
-                    } else {
-                        "No indexed files. Run 'index' first.".into()
-                    }
-                }
-                _ => "No matches.".into(),
-            }
-        }
-        _ => "No index found. Run 'index' first.".into(),
     }
 }
 

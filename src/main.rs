@@ -327,7 +327,12 @@ fn cmd_search(
         println!("{}", serde_json::to_string_pretty(&results)?);
     } else {
         if results.is_empty() {
-            eprintln!("No results found.");
+            let msg = booger::search::text::explain_empty_search(
+                &root,
+                &config,
+                search_query.path_prefix.as_deref(),
+            );
+            eprintln!("{msg}");
             return Ok(());
         }
         eprintln!("{} result(s)\n", results.len());

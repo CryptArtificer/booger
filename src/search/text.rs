@@ -147,3 +147,26 @@ pub fn search(root: &Path, config: &Config, query: &SearchQuery) -> Result<Vec<S
     results.truncate(query.max_results);
     Ok(results)
 }
+
+/// Return a short reason why search returned no results. Used by CLI and MCP
+/// so agents and users see "No matches." vs "Path prefix has no indexed files." etc.
+pub fn explain_empty_search(root: &Path, config: &Config, path_prefix: Option<&str>) -> String {
+    let root = match root.canonicalize() {
+        Ok(p) => p,
+        Err(_) => root.to_path_buf(),
+    };
+    let storage_dir = config.storage_dir(&root);
+    match Store::open_if_exists(&storage_dir) {
+        Ok(Some(store)) => match store.path_has_chunks(path_prefix) {
+            Ok(false) => {
+                if path_prefix.is_some() {
+                    "Path prefix has no indexed files.".into()
+                } else {
+                    "No indexed files. Run 'index' first.".into()
+                }
+            }
+            _ => "No matches.".into(),
+        },
+        _ => "No index found. Run 'index' first.".into(),
+    }
+}
