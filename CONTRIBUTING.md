@@ -20,4 +20,12 @@ Scope filter on references (#1)
 
 Work items from the [Agent Wishlist](PLAN.md#agent-wishlist) and milestones are tracked as **GitHub issues** when we’re ready to implement them. Prefer creating an issue for a task before coding, then reference it in branches and commits (e.g. branch `issue/1-scope-filter`, commit body `Fixes #1`).
 
-**Tasks are gospel.** The issue’s description and acceptance criteria are the spec. Implementation is done when the acceptance criteria are met; docs and tests must be updated to match. Before closing, verify against the issue (including integration-style checks where it makes sense).
+**Tasks are gospel.** The issue’s description and acceptance criteria are the spec. Implementation is done when the acceptance criteria are met.
+
+**Before considering any task complete:**
+
+1. **Docs** — Update every doc that mentions the feature, counts (e.g. “N tools”), or related behavior. Grep for stale numbers and references.
+2. **Tests** — Add or update tests so the new/changed behavior is covered. Fix any tests that break.
+3. **Integration** — Run the feature end-to-end (CLI and/or MCP as relevant): real call, real response. Don’t rely on unit tests alone.
+
+Then verify against the issue. Add a short verification note in `doc/verification-notes.md` when the change is non-trivial.
