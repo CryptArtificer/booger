@@ -1137,7 +1137,13 @@ fn tool_symbols(args: &Value, project_root: &PathBuf) -> ToolResult {
     let storage_dir = config.storage_dir(&root);
     let store = match Store::open_if_exists(&storage_dir) {
         Ok(Some(s)) => s,
-        Ok(None) => return ToolResult::success("No index found. Run 'index' first."),
+        Ok(None) => {
+            let path = root.canonicalize().unwrap_or_else(|_| root.clone());
+            return ToolResult::success(crate::search::text::format_index_first_message(
+                &path,
+                crate::search::text::IndexFirstKind::NoIndex,
+            ));
+        }
         Err(e) => return ToolResult::error(format!("Failed to open store: {e}")),
     };
 
@@ -1152,15 +1158,17 @@ fn tool_symbols(args: &Value, project_root: &PathBuf) -> ToolResult {
             if results.is_empty() {
                 let msg = match store.path_has_chunks(path_prefix) {
                     Ok(false) => {
-                        if path_prefix.is_some() {
-                            "Path prefix has no indexed files."
+                        let kind = if path_prefix.is_some() {
+                            crate::search::text::IndexFirstKind::PathPrefixEmpty
                         } else {
-                            "No indexed files. Run 'index' first."
-                        }
+                            crate::search::text::IndexFirstKind::NoIndexedFiles
+                        };
+                        let path = root.canonicalize().unwrap_or_else(|_| root.clone());
+                        crate::search::text::format_index_first_message(&path, kind)
                     }
-                    _ => "No symbols found.",
+                    _ => "No symbols found.".into(),
                 };
-                return ToolResult::success(msg.to_string());
+                return ToolResult::success(msg);
             }
             ToolResult::success(format_results(&results, &opts))
         }
@@ -1292,7 +1300,13 @@ fn tool_references(args: &Value, project_root: &PathBuf) -> ToolResult {
     );
     let store = match Store::open_if_exists(&storage_dir) {
         Ok(Some(s)) => s,
-        Ok(None) => return ToolResult::success("No index found. Run 'index' first."),
+        Ok(None) => {
+            let path = root.canonicalize().unwrap_or_else(|_| root.clone());
+            return ToolResult::success(crate::search::text::format_index_first_message(
+                &path,
+                crate::search::text::IndexFirstKind::NoIndex,
+            ));
+        }
         Err(e) => return ToolResult::error(format!("Failed to open store: {e}")),
     };
 
@@ -1306,12 +1320,13 @@ fn tool_references(args: &Value, project_root: &PathBuf) -> ToolResult {
     };
 
     if all_chunks.is_empty() {
-        let msg = if path_prefix.is_some() {
-            "Path prefix has no indexed files."
+        let kind = if path_prefix.is_some() {
+            crate::search::text::IndexFirstKind::PathPrefixEmpty
         } else {
-            "No indexed files. Run 'index' first."
+            crate::search::text::IndexFirstKind::NoIndexedFiles
         };
-        return ToolResult::success(msg.to_string());
+        let path = root.canonicalize().unwrap_or_else(|_| root.clone());
+        return ToolResult::success(crate::search::text::format_index_first_message(&path, kind));
     }
 
     let pattern = match regex::Regex::new(&format!(r"\b{}\b", regex::escape(symbol))) {
@@ -2136,7 +2151,9 @@ mod tests {
             "path_prefix": "other/"
         }), &root);
         assert!(result.is_error.is_none());
-        assert_eq!(result.content[0].text.trim(), "Path prefix has no indexed files.");
+        let text = result.content[0].text.trim();
+        assert!(text.starts_with("Path prefix has no indexed files."), "{text}");
+        assert!(text.contains("Run: booger index"), "{text}");
     }
 
     #[test]
@@ -2147,7 +2164,9 @@ mod tests {
         let _ = crate::index::index_directory(&root, &config);
         let result = call_tool("search", &json!({"query": "anything"}), &root);
         assert!(result.is_error.is_none());
-        assert_eq!(result.content[0].text.trim(), "No indexed files. Run 'index' first.");
+        let text = result.content[0].text.trim();
+        assert!(text.starts_with("No indexed files."), "{text}");
+        assert!(text.contains("Run: booger index"), "{text}");
     }
 
     // ── batch ──
@@ -2292,7 +2311,9 @@ mod tests {
             "path_prefix": "other/"
         }), &root);
         assert!(result.is_error.is_none());
-        assert_eq!(result.content[0].text.trim(), "Path prefix has no indexed files.");
+        let text = result.content[0].text.trim();
+        assert!(text.starts_with("Path prefix has no indexed files."), "{text}");
+        assert!(text.contains("Run: booger index"), "{text}");
     }
 
     #[test]
@@ -2303,7 +2324,9 @@ mod tests {
         let _ = crate::index::index_directory(&root, &config);
         let result = call_tool("symbols", &json!({}), &root);
         assert!(result.is_error.is_none());
-        assert_eq!(result.content[0].text.trim(), "No indexed files. Run 'index' first.");
+        let text = result.content[0].text.trim();
+        assert!(text.starts_with("No indexed files."), "{text}");
+        assert!(text.contains("Run: booger index"), "{text}");
     }
 
     #[test]
@@ -2358,7 +2381,9 @@ mod tests {
             "path_prefix": "other/"
         }), &root);
         assert!(result.is_error.is_none());
-        assert_eq!(result.content[0].text.trim(), "Path prefix has no indexed files.");
+        let text = result.content[0].text.trim();
+        assert!(text.starts_with("Path prefix has no indexed files."), "{text}");
+        assert!(text.contains("Run: booger index"), "{text}");
     }
 
     #[test]

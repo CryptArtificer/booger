@@ -114,9 +114,9 @@ a short reason so agents know what to do next:
 | Reason | Meaning |
 |---|---|
 | **No matches.** | Index exists and has chunks; the query or filters matched nothing. |
-| **Path prefix has no indexed files.** | A path prefix was given and no indexed file path starts with it. |
-| **No index found. Run 'index' first.** | No database at the project's storage path. |
-| **No indexed files. Run 'index' first.** | Database exists but has no chunks (e.g. empty or failed index). |
+| **No index found. Run: booger index \"…\"** | No database at the project's storage path. Message includes the exact path to run. |
+| **No indexed files. Run: booger index \"…\"** | Database exists but has no chunks. Message includes the exact path to run. |
+| **Path prefix has no indexed files. Run: booger index \"…\"** | Path prefix was given and has no indexed files. Message includes the project path. |
 | **No matches for symbol 'X'.** | (`references` only) Index has chunks but no definition or reference for that symbol. |
 
 This avoids the "empty result with no explanation" case and helps agents suggest

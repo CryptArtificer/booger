@@ -226,11 +226,9 @@ Things I (the agent) actually want, based on daily use:
 - **~~Batch tool calls~~** ✅ Shipped — `batch` accepts an array of tool calls (max 20)
   and returns all results in one round-trip.
 
-- **Auto-index or "index first" guidance** — When I call search/references/symbols on
-  a project that isn't indexed (or the path has no indexed files), I get empty
-  results and can't tell why. Either auto-index on first search (with size/time
-  limits) or return a clear message: "Project X not indexed. Run: booger index
-  <path>". Then I can suggest the user run index or retry without guessing.
+- **~~Auto-index or "index first" guidance~~** ✅ Shipped — When search/references/symbols
+  return "no index" or "no indexed files", the message now includes the exact
+  command: "Run: booger index \"<path>\"" so agents can suggest it or the user can copy-paste.
 
 - **~~Explain empty results~~** ✅ Shipped — When search/references/symbols return
   0 results, the tool reports a short reason: "No matches.", "Path prefix has no

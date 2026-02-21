@@ -148,6 +148,27 @@ pub fn search(root: &Path, config: &Config, query: &SearchQuery) -> Result<Vec<S
     Ok(results)
 }
 
+/// Kind of "index first" message so we can suggest the exact booger index command.
+#[derive(Clone, Copy)]
+pub enum IndexFirstKind {
+    NoIndex,
+    NoIndexedFiles,
+    PathPrefixEmpty,
+}
+
+/// Format a message that tells the user to run index, including the exact command with path.
+/// Used by search, references, symbols and CLI so agents get "Run: booger index /path".
+pub fn format_index_first_message(root: &Path, kind: IndexFirstKind) -> String {
+    let path = root.display();
+    match kind {
+        IndexFirstKind::NoIndex => format!("No index found. Run: booger index \"{path}\""),
+        IndexFirstKind::NoIndexedFiles => format!("No indexed files. Run: booger index \"{path}\""),
+        IndexFirstKind::PathPrefixEmpty => {
+            format!("Path prefix has no indexed files. Run: booger index \"{path}\"")
+        }
+    }
+}
+
 /// Return a short reason why search returned no results. Used by CLI and MCP
 /// so agents and users see "No matches." vs "Path prefix has no indexed files." etc.
 pub fn explain_empty_search(root: &Path, config: &Config, path_prefix: Option<&str>) -> String {
@@ -159,14 +180,15 @@ pub fn explain_empty_search(root: &Path, config: &Config, path_prefix: Option<&s
     match Store::open_if_exists(&storage_dir) {
         Ok(Some(store)) => match store.path_has_chunks(path_prefix) {
             Ok(false) => {
-                if path_prefix.is_some() {
-                    "Path prefix has no indexed files.".into()
+                let kind = if path_prefix.is_some() {
+                    IndexFirstKind::PathPrefixEmpty
                 } else {
-                    "No indexed files. Run 'index' first.".into()
-                }
+                    IndexFirstKind::NoIndexedFiles
+                };
+                format_index_first_message(&root, kind)
             }
             _ => "No matches.".into(),
         },
-        _ => "No index found. Run 'index' first.".into(),
+        _ => format_index_first_message(&root, IndexFirstKind::NoIndex),
     }
 }
