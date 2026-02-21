@@ -1,11 +1,17 @@
 # Booger
 
 <p align="center">
-  <img src="doc/rw-booger.png" width="400" alt="Named after Ralph Wiggum — the only thing he's really good at finding. AI agents are a lot like Ralph: endlessly poking around, not always sure what they're looking for, but occasionally pulling out exactly what you need. Booger helps them find it faster." />
+  <img src="doc/rw-booger.png" width="400" alt="Ralph Wiggum picking his nose" />
 </p>
 
 <p align="center">
   <strong>A local code search engine, index, and working memory for AI agents.</strong>
+</p>
+
+<p align="center">
+  <em>Named after Ralph Wiggum — the only thing he's really good at finding.<br/>
+  AI agents are a lot like Ralph: endlessly poking around, not always sure<br/>
+  what they're looking for, but occasionally pulling out exactly what you need.</em>
 </p>
 
 <p align="center">
