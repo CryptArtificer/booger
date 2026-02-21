@@ -783,6 +783,445 @@ fn blob_to_embedding(blob: &[u8]) -> Vec<f32> {
         .collect()
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn test_store() -> (TempDir, Store) {
+        let dir = TempDir::new().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        (dir, store)
+    }
+
+    fn insert_test_file(store: &Store, path: &str, lang: &str) -> i64 {
+        let fid = store.upsert_file(path, "hash123", 100, Some(lang)).unwrap();
+        store.insert_chunks(fid, &[
+            ChunkInsert {
+                kind: "function".into(),
+                name: Some("hello".into()),
+                content: "fn hello() { println!(\"hi\"); }".into(),
+                signature: Some("fn hello()".into()),
+                start_line: 1,
+                end_line: 3,
+                start_byte: 0,
+                end_byte: 30,
+            },
+            ChunkInsert {
+                kind: "function".into(),
+                name: Some("world".into()),
+                content: "fn world() -> i32 { 42 }".into(),
+                signature: Some("fn world() -> i32".into()),
+                start_line: 5,
+                end_line: 7,
+                start_byte: 31,
+                end_byte: 55,
+            },
+            ChunkInsert {
+                kind: "struct".into(),
+                name: Some("Config".into()),
+                content: "struct Config { name: String }".into(),
+                signature: Some("struct Config".into()),
+                start_line: 9,
+                end_line: 11,
+                start_byte: 56,
+                end_byte: 85,
+            },
+        ]).unwrap();
+        fid
+    }
+
+    #[test]
+    fn open_creates_db() {
+        let dir = TempDir::new().unwrap();
+        assert!(!dir.path().join("index.db").exists());
+        let _store = Store::open(dir.path()).unwrap();
+        assert!(dir.path().join("index.db").exists());
+    }
+
+    #[test]
+    fn open_if_exists_returns_none_for_missing() {
+        let dir = TempDir::new().unwrap();
+        let result = Store::open_if_exists(dir.path()).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn open_if_exists_returns_some_for_existing() {
+        let (dir, _store) = test_store();
+        let result = Store::open_if_exists(dir.path()).unwrap();
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn upsert_and_get_file() {
+        let (_dir, store) = test_store();
+        let fid = store.upsert_file("src/main.rs", "abc123", 500, Some("rust")).unwrap();
+        assert!(fid > 0);
+
+        let file = store.get_file("src/main.rs").unwrap();
+        assert!(file.is_some());
+        let file = file.unwrap();
+        assert_eq!(file.path, "src/main.rs");
+        assert_eq!(file.content_hash, "abc123");
+        assert_eq!(file.size_bytes, 500);
+        assert_eq!(file.language, Some("rust".into()));
+    }
+
+    #[test]
+    fn upsert_file_updates_on_conflict() {
+        let (_dir, store) = test_store();
+        store.upsert_file("src/main.rs", "hash1", 100, Some("rust")).unwrap();
+        store.upsert_file("src/main.rs", "hash2", 200, Some("rust")).unwrap();
+
+        let file = store.get_file("src/main.rs").unwrap().unwrap();
+        assert_eq!(file.content_hash, "hash2");
+        assert_eq!(file.size_bytes, 200);
+    }
+
+    #[test]
+    fn get_file_returns_none_for_missing() {
+        let (_dir, store) = test_store();
+        assert!(store.get_file("nonexistent.rs").unwrap().is_none());
+    }
+
+    #[test]
+    fn insert_and_search_chunks() {
+        let (_dir, store) = test_store();
+        insert_test_file(&store, "src/lib.rs", "rust");
+
+        let results = store.search("hello", None, None, None, 10).unwrap();
+        assert!(!results.is_empty());
+        assert_eq!(results[0].chunk_name, Some("hello".into()));
+        assert_eq!(results[0].file_path, "src/lib.rs");
+    }
+
+    #[test]
+    fn search_with_language_filter() {
+        let (_dir, store) = test_store();
+        insert_test_file(&store, "src/lib.rs", "rust");
+        insert_test_file(&store, "src/app.py", "python");
+
+        let rust_results = store.search("hello", Some("rust"), None, None, 10).unwrap();
+        assert_eq!(rust_results.len(), 1);
+        assert_eq!(rust_results[0].file_path, "src/lib.rs");
+
+        let py_results = store.search("hello", Some("python"), None, None, 10).unwrap();
+        assert_eq!(py_results.len(), 1);
+        assert_eq!(py_results[0].file_path, "src/app.py");
+    }
+
+    #[test]
+    fn search_with_kind_filter() {
+        let (_dir, store) = test_store();
+        insert_test_file(&store, "src/lib.rs", "rust");
+
+        let fns = store.search("hello", None, None, Some("function"), 10).unwrap();
+        assert!(!fns.is_empty());
+
+        let structs = store.search("hello", None, None, Some("struct"), 10).unwrap();
+        assert!(structs.is_empty());
+    }
+
+    #[test]
+    fn search_with_path_prefix() {
+        let (_dir, store) = test_store();
+        insert_test_file(&store, "src/lib.rs", "rust");
+        insert_test_file(&store, "tests/test.rs", "rust");
+
+        let src = store.search("hello", None, Some("src/"), None, 10).unwrap();
+        assert_eq!(src.len(), 1);
+        assert_eq!(src[0].file_path, "src/lib.rs");
+    }
+
+    #[test]
+    fn search_returns_signature() {
+        let (_dir, store) = test_store();
+        insert_test_file(&store, "src/lib.rs", "rust");
+
+        let results = store.search("world", None, None, None, 10).unwrap();
+        assert!(!results.is_empty());
+        assert_eq!(results[0].signature, Some("fn world() -> i32".into()));
+    }
+
+    #[test]
+    fn search_no_results() {
+        let (_dir, store) = test_store();
+        insert_test_file(&store, "src/lib.rs", "rust");
+
+        let results = store.search("nonexistentxyz", None, None, None, 10).unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn list_symbols_excludes_raw() {
+        let (_dir, store) = test_store();
+        let fid = store.upsert_file("src/lib.rs", "h", 100, Some("rust")).unwrap();
+        store.insert_chunks(fid, &[
+            ChunkInsert { kind: "function".into(), name: Some("a".into()), content: "fn a()".into(), signature: None, start_line: 1, end_line: 1, start_byte: 0, end_byte: 6 },
+            ChunkInsert { kind: "raw".into(), name: None, content: "raw text".into(), signature: None, start_line: 2, end_line: 2, start_byte: 7, end_byte: 15 },
+        ]).unwrap();
+
+        let symbols = store.list_symbols(None, None).unwrap();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].chunk_kind, "function");
+    }
+
+    #[test]
+    fn all_chunks_includes_raw() {
+        let (_dir, store) = test_store();
+        let fid = store.upsert_file("src/lib.rs", "h", 100, Some("rust")).unwrap();
+        store.insert_chunks(fid, &[
+            ChunkInsert { kind: "function".into(), name: Some("a".into()), content: "fn a()".into(), signature: None, start_line: 1, end_line: 1, start_byte: 0, end_byte: 6 },
+            ChunkInsert { kind: "raw".into(), name: None, content: "raw text".into(), signature: None, start_line: 2, end_line: 2, start_byte: 7, end_byte: 15 },
+        ]).unwrap();
+
+        let all = store.all_chunks(None, None).unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn delete_chunks_for_file() {
+        let (_dir, store) = test_store();
+        let fid = insert_test_file(&store, "src/lib.rs", "rust");
+
+        let before = store.all_chunks(None, None).unwrap();
+        assert_eq!(before.len(), 3);
+
+        store.delete_chunks_for_file(fid).unwrap();
+        let after = store.all_chunks(None, None).unwrap();
+        assert!(after.is_empty());
+    }
+
+    #[test]
+    fn remove_file_cascades() {
+        let (_dir, store) = test_store();
+        insert_test_file(&store, "src/lib.rs", "rust");
+
+        store.remove_file("src/lib.rs").unwrap();
+        assert!(store.get_file("src/lib.rs").unwrap().is_none());
+        assert!(store.all_chunks(None, None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn stats() {
+        let (dir, store) = test_store();
+        insert_test_file(&store, "src/lib.rs", "rust");
+
+        let stats = store.stats(dir.path()).unwrap();
+        assert_eq!(stats.file_count, 1);
+        assert_eq!(stats.chunk_count, 3);
+        assert!(stats.total_size_bytes > 0);
+        assert_eq!(stats.languages.len(), 1);
+        assert_eq!(stats.languages[0].0, "rust");
+    }
+
+    #[test]
+    fn kind_stats() {
+        let (_dir, store) = test_store();
+        insert_test_file(&store, "src/lib.rs", "rust");
+
+        let kinds = store.kind_stats().unwrap();
+        let fn_count = kinds.iter().find(|(k, _)| k == "function").map(|(_, c)| *c).unwrap_or(0);
+        let st_count = kinds.iter().find(|(k, _)| k == "struct").map(|(_, c)| *c).unwrap_or(0);
+        assert_eq!(fn_count, 2);
+        assert_eq!(st_count, 1);
+    }
+
+    // ── Annotations ──
+
+    #[test]
+    fn annotation_crud() {
+        let (_dir, store) = test_store();
+        let id = store.add_annotation("src/lib.rs", "important file", None, None).unwrap();
+        assert!(id > 0);
+
+        let anns = store.get_annotations(None, None).unwrap();
+        assert_eq!(anns.len(), 1);
+        assert_eq!(anns[0].target, "src/lib.rs");
+        assert_eq!(anns[0].note, "important file");
+
+        store.delete_annotation(id).unwrap();
+        let anns = store.get_annotations(None, None).unwrap();
+        assert!(anns.is_empty());
+    }
+
+    #[test]
+    fn annotation_session_filter() {
+        let (_dir, store) = test_store();
+        store.add_annotation("a.rs", "note1", Some("s1"), None).unwrap();
+        store.add_annotation("b.rs", "note2", Some("s2"), None).unwrap();
+        store.add_annotation("c.rs", "note3", None, None).unwrap();
+
+        let s1 = store.get_annotations(None, Some("s1")).unwrap();
+        assert_eq!(s1.len(), 2); // s1 + global (None)
+
+        let all = store.get_annotations(None, None).unwrap();
+        assert_eq!(all.len(), 3);
+    }
+
+    #[test]
+    fn annotation_target_filter() {
+        let (_dir, store) = test_store();
+        store.add_annotation("a.rs", "note1", None, None).unwrap();
+        store.add_annotation("b.rs", "note2", None, None).unwrap();
+
+        let filtered = store.get_annotations(Some("a.rs"), None).unwrap();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].target, "a.rs");
+    }
+
+    #[test]
+    fn clear_annotations_all() {
+        let (_dir, store) = test_store();
+        store.add_annotation("a.rs", "n1", Some("s1"), None).unwrap();
+        store.add_annotation("b.rs", "n2", Some("s2"), None).unwrap();
+        store.add_annotation("c.rs", "n3", None, None).unwrap();
+
+        let cleared = store.clear_annotations(None).unwrap();
+        assert_eq!(cleared, 3);
+        assert!(store.get_annotations(None, None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn clear_annotations_by_session() {
+        let (_dir, store) = test_store();
+        store.add_annotation("a.rs", "n1", Some("s1"), None).unwrap();
+        store.add_annotation("b.rs", "n2", Some("s2"), None).unwrap();
+
+        let cleared = store.clear_annotations(Some("s1")).unwrap();
+        assert_eq!(cleared, 1);
+        let remaining = store.get_annotations(None, None).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].target, "b.rs");
+    }
+
+    // ── Working Set ──
+
+    #[test]
+    fn workset_focus_and_visit() {
+        let (_dir, store) = test_store();
+        store.add_to_workset("src/main.rs", "focus", None).unwrap();
+        store.add_to_workset("src/old.rs", "visited", None).unwrap();
+
+        let focus = store.get_focus_paths(None).unwrap();
+        assert_eq!(focus, vec!["src/main.rs"]);
+
+        let visited = store.get_visited_paths(None).unwrap();
+        assert_eq!(visited, vec!["src/old.rs"]);
+    }
+
+    #[test]
+    fn clear_workset() {
+        let (_dir, store) = test_store();
+        store.add_to_workset("a", "focus", Some("s1")).unwrap();
+        store.add_to_workset("b", "focus", Some("s2")).unwrap();
+
+        store.clear_workset(Some("s1")).unwrap();
+        let focus = store.get_focus_paths(None).unwrap();
+        assert_eq!(focus, vec!["b"]);
+
+        store.clear_workset(None).unwrap();
+        assert!(store.get_focus_paths(None).unwrap().is_empty());
+    }
+
+    // ── Changed Since ──
+
+    #[test]
+    fn chunks_changed_since() {
+        let (_dir, store) = test_store();
+        let old_ts = "2020-01-01T00:00:00Z";
+        insert_test_file(&store, "src/lib.rs", "rust");
+
+        let changed = store.chunks_changed_since(old_ts, None).unwrap();
+        assert_eq!(changed.len(), 3); // all 3 chunks are newer than 2020
+
+        let future_ts = "2099-01-01T00:00:00Z";
+        let changed = store.chunks_changed_since(future_ts, None).unwrap();
+        assert!(changed.is_empty());
+    }
+
+    #[test]
+    fn chunks_changed_since_with_kind_filter() {
+        let (_dir, store) = test_store();
+        insert_test_file(&store, "src/lib.rs", "rust");
+
+        let fns = store.chunks_changed_since("2020-01-01T00:00:00Z", Some("function")).unwrap();
+        assert_eq!(fns.len(), 2);
+
+        let structs = store.chunks_changed_since("2020-01-01T00:00:00Z", Some("struct")).unwrap();
+        assert_eq!(structs.len(), 1);
+    }
+
+    // ── Embeddings ──
+
+    #[test]
+    fn embedding_roundtrip() {
+        let (_dir, store) = test_store();
+        insert_test_file(&store, "src/lib.rs", "rust");
+
+        let actual_id: i64 = store.conn.query_row("SELECT id FROM chunks LIMIT 1", [], |r| r.get(0)).unwrap();
+
+        let embedding = vec![0.1f32, 0.2, 0.3, 0.4];
+        store.upsert_embedding(actual_id, "test-model", &embedding).unwrap();
+
+        let count = store.embedding_count().unwrap();
+        assert_eq!(count, 1);
+    }
+
+    // ── FTS Sanitization ──
+
+    #[test]
+    fn sanitize_plain_query() {
+        assert_eq!(sanitize_fts_query("hello world"), "hello world");
+    }
+
+    #[test]
+    fn sanitize_hyphenated_query() {
+        assert_eq!(sanitize_fts_query("tree-sitter"), "\"tree-sitter\"");
+    }
+
+    #[test]
+    fn sanitize_quoted_phrase() {
+        assert_eq!(sanitize_fts_query("\"exact match\""), "\"exact match\"");
+    }
+
+    #[test]
+    fn sanitize_mixed_query() {
+        assert_eq!(sanitize_fts_query("hello tree-sitter world"), "hello \"tree-sitter\" world");
+    }
+
+    #[test]
+    fn sanitize_path_query() {
+        assert_eq!(sanitize_fts_query("src/main.rs"), "\"src/main.rs\"");
+    }
+
+    #[test]
+    fn sanitize_empty() {
+        assert_eq!(sanitize_fts_query(""), "");
+    }
+
+    // ── Transactions ──
+
+    #[test]
+    fn transaction_commit() {
+        let (_dir, store) = test_store();
+        store.begin_transaction().unwrap();
+        store.upsert_file("a.rs", "h", 10, None).unwrap();
+        store.commit_transaction().unwrap();
+        assert!(store.get_file("a.rs").unwrap().is_some());
+    }
+
+    #[test]
+    fn transaction_rollback() {
+        let (_dir, store) = test_store();
+        store.begin_transaction().unwrap();
+        store.upsert_file("a.rs", "h", 10, None).unwrap();
+        store.rollback_transaction().unwrap();
+        assert!(store.get_file("a.rs").unwrap().is_none());
+    }
+}
+
 /// Sanitize user input for FTS5 MATCH queries.
 /// FTS5 treats `-`, `AND`, `OR`, `NOT`, `NEAR` as operators.
 /// We quote bare terms that contain special characters, and preserve

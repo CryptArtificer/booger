@@ -191,3 +191,82 @@ fn dirs_home() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn default_config() {
+        let config = Config::default();
+        assert_eq!(config.storage.max_size_bytes, 0);
+        assert!(config.resources.max_threads >= 1);
+        assert_eq!(config.resources.batch_size, 500);
+    }
+
+    #[test]
+    fn config_save_and_load() {
+        let dir = TempDir::new().unwrap();
+        let config = Config::default();
+        config.save(dir.path()).unwrap();
+
+        let loaded = Config::load(dir.path()).unwrap();
+        assert_eq!(loaded.storage.max_size_bytes, config.storage.max_size_bytes);
+        assert_eq!(loaded.resources.batch_size, config.resources.batch_size);
+    }
+
+    #[test]
+    fn config_load_missing_returns_default() {
+        let dir = TempDir::new().unwrap();
+        let config = Config::load(dir.path()).unwrap();
+        assert_eq!(config.resources.batch_size, 500);
+    }
+
+    #[test]
+    fn storage_dir_default() {
+        let config = Config::default();
+        let root = PathBuf::from("/tmp/project");
+        assert_eq!(config.storage_dir(&root), root.join(".booger"));
+    }
+
+    #[test]
+    fn effective_threads_zero_auto() {
+        let mut config = Config::default();
+        config.resources.max_threads = 0;
+        assert!(config.effective_threads() >= 1);
+    }
+
+    #[test]
+    fn effective_threads_explicit() {
+        let mut config = Config::default();
+        config.resources.max_threads = 8;
+        assert_eq!(config.effective_threads(), 8);
+    }
+
+    // ── ProjectRegistry ──
+
+    #[test]
+    fn registry_add_remove() {
+        let mut reg = ProjectRegistry::default();
+        reg.add("test".into(), PathBuf::from("/tmp/test"));
+        assert_eq!(reg.projects.len(), 1);
+        assert!(reg.remove("test"));
+        assert!(reg.projects.is_empty());
+        assert!(!reg.remove("nonexistent"));
+    }
+
+    #[test]
+    fn registry_resolve_by_name() {
+        let mut reg = ProjectRegistry::default();
+        reg.add("myproject".into(), PathBuf::from("/tmp/myproject"));
+        let resolved = reg.resolve("myproject");
+        assert_eq!(resolved, Some(PathBuf::from("/tmp/myproject")));
+    }
+
+    #[test]
+    fn registry_resolve_unknown() {
+        let reg = ProjectRegistry::default();
+        assert!(reg.resolve("nonexistent").is_none());
+    }
+}

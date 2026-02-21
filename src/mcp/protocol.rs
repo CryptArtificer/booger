@@ -151,3 +151,85 @@ pub struct ResourceContent {
     pub mime_type: String,
     pub text: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn jsonrpc_success_response() {
+        let resp = JsonRpcResponse::success(Some(json!(1)), json!({"ok": true}));
+        assert_eq!(resp.jsonrpc, "2.0");
+        assert_eq!(resp.id, Some(json!(1)));
+        assert!(resp.result.is_some());
+        assert!(resp.error.is_none());
+    }
+
+    #[test]
+    fn jsonrpc_error_response() {
+        let resp = JsonRpcResponse::error(Some(json!(2)), -32600, "Invalid Request");
+        assert_eq!(resp.jsonrpc, "2.0");
+        assert_eq!(resp.id, Some(json!(2)));
+        assert!(resp.result.is_none());
+        let err = resp.error.unwrap();
+        assert_eq!(err.code, -32600);
+        assert_eq!(err.message, "Invalid Request");
+    }
+
+    #[test]
+    fn jsonrpc_error_without_id() {
+        let resp = JsonRpcResponse::error(None, -32700, "Parse error");
+        assert!(resp.id.is_none());
+    }
+
+    #[test]
+    fn tool_result_success() {
+        let result = ToolResult::success("hello");
+        assert!(result.is_error.is_none());
+        assert_eq!(result.content[0].text, "hello");
+        assert_eq!(result.content[0].content_type, "text");
+    }
+
+    #[test]
+    fn tool_result_error() {
+        let result = ToolResult::error("boom");
+        assert_eq!(result.is_error, Some(true));
+        assert_eq!(result.content[0].text, "boom");
+    }
+
+    #[test]
+    fn parse_valid_request() {
+        let json_str = r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}"#;
+        let req: JsonRpcRequest = serde_json::from_str(json_str).unwrap();
+        assert_eq!(req.method, "tools/list");
+        assert_eq!(req.id, Some(json!(1)));
+    }
+
+    #[test]
+    fn parse_notification() {
+        let json_str = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
+        let req: JsonRpcRequest = serde_json::from_str(json_str).unwrap();
+        assert!(req.id.is_none());
+        assert_eq!(req.method, "notifications/initialized");
+    }
+
+    #[test]
+    fn serialize_response_omits_nulls() {
+        let resp = JsonRpcResponse::success(Some(json!(1)), json!("ok"));
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(!json.contains("error"));
+    }
+
+    #[test]
+    fn tool_definition_serializes() {
+        let def = ToolDefinition {
+            name: "test".into(),
+            description: "A test tool".into(),
+            input_schema: json!({"type": "object"}),
+        };
+        let json = serde_json::to_value(&def).unwrap();
+        assert_eq!(json["name"], "test");
+        assert_eq!(json["inputSchema"]["type"], "object");
+    }
+}

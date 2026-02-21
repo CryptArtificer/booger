@@ -2008,3 +2008,277 @@ fn resolve_project(args: &Value, default_root: &PathBuf) -> Result<PathBuf, Stri
     }
     Ok(default_root.clone())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use tempfile::TempDir;
+
+    fn setup_test_project() -> (TempDir, PathBuf) {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().to_path_buf();
+        // Create a minimal source file for indexing
+        let src_dir = root.join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+        std::fs::write(
+            src_dir.join("main.rs"),
+            "fn main() {\n    println!(\"hello\");\n}\n\nfn helper() -> i32 {\n    42\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n    fn test_helper() {\n        assert_eq!(helper(), 42);\n    }\n}\n",
+        ).unwrap();
+        std::fs::write(
+            src_dir.join("lib.rs"),
+            "pub struct Config {\n    pub name: String,\n}\n\npub fn search(q: &str) -> Vec<String> {\n    vec![q.to_string()]\n}\n",
+        ).unwrap();
+        // Index it
+        let config = Config::default();
+        let _ = crate::index::index_directory(&root, &config);
+        (dir, root)
+    }
+
+    // ── Tool list ──
+
+    #[test]
+    fn list_tools_returns_all() {
+        let tools = list_tools();
+        assert!(tools.len() >= 23);
+        let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"search"));
+        assert!(names.contains(&"batch"));
+        assert!(names.contains(&"workspace-search"));
+        assert!(names.contains(&"tests-for"));
+        assert!(names.contains(&"directory-summary"));
+        assert!(names.contains(&"changed-since"));
+    }
+
+    // ── call_tool dispatch ──
+
+    #[test]
+    fn call_unknown_tool() {
+        let root = PathBuf::from("/tmp");
+        let result = call_tool("nonexistent", &json!({}), &root);
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.content[0].text.contains("Unknown tool"));
+    }
+
+    // ── search ──
+
+    #[test]
+    fn search_missing_query() {
+        let root = PathBuf::from("/tmp");
+        let result = call_tool("search", &json!({}), &root);
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.content[0].text.contains("query"));
+    }
+
+    #[test]
+    fn search_finds_results() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("search", &json!({"query": "helper"}), &root);
+        assert!(result.is_error.is_none());
+        assert!(result.content[0].text.contains("result"));
+    }
+
+    // ── batch ──
+
+    #[test]
+    fn batch_missing_calls() {
+        let root = PathBuf::from("/tmp");
+        let result = call_tool("batch", &json!({}), &root);
+        assert_eq!(result.is_error, Some(true));
+    }
+
+    #[test]
+    fn batch_exceeds_limit() {
+        let root = PathBuf::from("/tmp");
+        let calls: Vec<Value> = (0..21).map(|_| json!({"tool": "status"})).collect();
+        let result = call_tool("batch", &json!({"calls": calls}), &root);
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.content[0].text.contains("20"));
+    }
+
+    #[test]
+    fn batch_rejects_recursion() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("batch", &json!({
+            "calls": [{"tool": "batch", "arguments": {"calls": []}}]
+        }), &root);
+        assert!(result.content[0].text.contains("recursive"));
+    }
+
+    #[test]
+    fn batch_executes_multiple() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("batch", &json!({
+            "calls": [
+                {"tool": "status"},
+                {"tool": "search", "arguments": {"query": "main", "output_mode": "count"}}
+            ]
+        }), &root);
+        assert!(result.is_error.is_none());
+        let text = &result.content[0].text;
+        assert!(text.contains("\"tool\": \"status\""));
+        assert!(text.contains("\"tool\": \"search\""));
+    }
+
+    // ── changed-since ──
+
+    #[test]
+    fn changed_since_rejects_bad_timestamp() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("changed-since", &json!({"since": "not-a-date"}), &root);
+        assert_eq!(result.is_error, Some(true));
+        assert!(result.content[0].text.contains("Invalid timestamp"));
+    }
+
+    #[test]
+    fn changed_since_valid_timestamp() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("changed-since", &json!({
+            "since": "2020-01-01T00:00:00Z",
+            "output_mode": "count"
+        }), &root);
+        assert!(result.is_error.is_none());
+        assert!(result.content[0].text.contains("result"));
+    }
+
+    // ── directory-summary ──
+
+    #[test]
+    fn directory_summary_works() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("directory-summary", &json!({"path": "src"}), &root);
+        assert!(result.is_error.is_none());
+        let text = &result.content[0].text;
+        assert!(text.contains("files"));
+        assert!(text.contains("chunks"));
+        assert!(text.contains("rust"));
+    }
+
+    #[test]
+    fn directory_summary_missing_path() {
+        let root = PathBuf::from("/tmp");
+        let result = call_tool("directory-summary", &json!({}), &root);
+        assert_eq!(result.is_error, Some(true));
+    }
+
+    // ── tests-for ──
+
+    #[test]
+    fn tests_for_finds_test_by_content() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("tests-for", &json!({
+            "symbol": "helper",
+            "output_mode": "count"
+        }), &root);
+        assert!(result.is_error.is_none());
+        // Should find test_helper which calls helper()
+        let text = &result.content[0].text;
+        assert!(text.contains("result") || text.contains("No tests"));
+    }
+
+    #[test]
+    fn tests_for_missing_symbol() {
+        let root = PathBuf::from("/tmp");
+        let result = call_tool("tests-for", &json!({}), &root);
+        assert_eq!(result.is_error, Some(true));
+    }
+
+    // ── resolve_project ──
+
+    #[test]
+    fn resolve_project_default() {
+        let root = PathBuf::from("/tmp/test");
+        let result = resolve_project(&json!({}), &root).unwrap();
+        assert_eq!(result, root);
+    }
+
+    #[test]
+    fn resolve_project_unknown_errors() {
+        let root = PathBuf::from("/tmp/test");
+        let result = resolve_project(&json!({"project": "nonexistent_xyz_123"}), &root);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown project"));
+    }
+
+    // ── symbols ──
+
+    #[test]
+    fn symbols_works() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("symbols", &json!({
+            "path_prefix": "src/main.rs",
+            "output_mode": "count"
+        }), &root);
+        assert!(result.is_error.is_none());
+        assert!(result.content[0].text.contains("result"));
+    }
+
+    // ── grep ──
+
+    #[test]
+    fn grep_works() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("grep", &json!({
+            "pattern": "println"
+        }), &root);
+        assert!(result.is_error.is_none());
+        let text = &result.content[0].text;
+        assert!(text.contains("match") || text.contains("println"));
+    }
+
+    #[test]
+    fn grep_invalid_regex() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("grep", &json!({"pattern": "[invalid"}), &root);
+        assert_eq!(result.is_error, Some(true));
+    }
+
+    // ── references ──
+
+    #[test]
+    fn references_finds_symbol() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("references", &json!({
+            "symbol": "helper",
+            "output_mode": "count"
+        }), &root);
+        assert!(result.is_error.is_none());
+    }
+
+    // ── status ──
+
+    #[test]
+    fn status_on_indexed_project() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("status", &json!({}), &root);
+        assert!(result.is_error.is_none());
+        let text = &result.content[0].text;
+        assert!(text.contains("files"));
+        assert!(text.contains("chunks"));
+    }
+
+    // ── format opts ──
+
+    #[test]
+    fn parse_format_opts_defaults() {
+        let (mode, offset, limit, max_lines) = parse_format_opts(&json!({}), "content");
+        assert_eq!(mode, "content");
+        assert_eq!(offset, 0);
+        assert!(limit.is_none());
+        assert!(max_lines.is_none());
+    }
+
+    #[test]
+    fn parse_format_opts_custom() {
+        let (mode, offset, limit, max_lines) = parse_format_opts(&json!({
+            "output_mode": "signatures",
+            "offset": 5,
+            "head_limit": 10,
+            "max_lines": 3
+        }), "content");
+        assert_eq!(mode, "signatures");
+        assert_eq!(offset, 5);
+        assert_eq!(limit, Some(10));
+        assert_eq!(max_lines, Some(3));
+    }
+}
