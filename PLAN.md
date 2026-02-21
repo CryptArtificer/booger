@@ -81,7 +81,7 @@ memory.
 
 ### M5 — MCP Server
 - [x] MCP protocol implementation (JSON-RPC over stdio)
-- [x] 16 tools: search, index, status, annotate, annotations, focus, visit, forget, branch-diff, draft-commit, changelog, projects, embed, semantic-search, symbols, grep
+- [x] 23 tools: search, grep, references, symbols, workspace-search, hybrid-search, semantic-search, tests-for, directory-summary, changed-since, index, status, embed, annotate, annotations, focus, visit, forget, branch-diff, draft-commit, changelog, batch, projects
 - [x] Expose resources: indexed project stats
 - [x] Agent-friendly structured output (content, files_with_matches, signatures, count)
 - [x] Multi-project support via `project` parameter
@@ -106,14 +106,17 @@ memory.
 - [ ] "What depends on X?" and "What does X depend on?" queries
 - [ ] Directory-level summaries (pre-computed or on-demand)
 
-### M7 — Polish
+### M7 — Polish & Quality
 - [x] Multi-project registry (~/.booger/projects.json)
 - [x] Read-only operations (status, search, list, forget) don't create .booger/ as side effect
 - [x] Hot-reload proxy script for MCP development (booger-proxy.sh)
+- [x] 77 unit tests across store, tools, protocol, config
+- [x] Security hardening: batch caps, thread limits, timestamp validation, no silent fallbacks
+- [x] Independent security verification by Codex (live MCP probing)
 - [ ] Filesystem watcher for live re-indexing
 - [ ] Remote index sharing (optional)
 - [ ] Performance tuning (large repos: 100k+ files)
-- [ ] Comprehensive error handling and logging
+- [ ] Integration tests (end-to-end MCP stdin/stdout)
 
 ### M8 — Cloud Deployment
 - [ ] HTTP/gRPC API server mode (`booger serve`) for remote access
@@ -179,7 +182,7 @@ src/
     mod.rs         — MCP server entry point
     server.rs      — JSON-RPC over stdio loop
     protocol.rs    — JSON-RPC + MCP type definitions
-    tools.rs       — 16 tool definitions + handlers
+    tools.rs       — 23 tool definitions + handlers
     resources.rs   — resource definitions + handlers
   git/
     mod.rs         — git integration entry point

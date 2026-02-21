@@ -22,7 +22,7 @@ booger becomes available to any agent without custom integration work.
 Agent writes to stdin  →  booger reads line  →  dispatch by method
                                                     ├─ initialize
                                                     ├─ tools/list
-                                                    ├─ tools/call → 18 tool handlers
+                                                    ├─ tools/call → 23 tool handlers
                                                     ├─ resources/list
                                                     └─ resources/read
                                               →  write response to stdout
