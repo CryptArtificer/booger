@@ -34,7 +34,9 @@ See the [search pipeline diagram](architecture.md) for a visual breakdown.
 The `references` tool goes further: given a symbol name, it finds every
 chunk that mentions it and classifies each hit as `[definition]`,
 `[call]`, `[type]`, `[import]`, or `[reference]`, along with which
-function the usage lives in.
+function the usage lives in. Optional **scope** filter: pass
+`scope: "call"` (or `definition`, `type`, `import`, `reference`) to
+return only that ref kind — e.g. "only call sites for symbol X".
 
 ## Hybrid Search
 

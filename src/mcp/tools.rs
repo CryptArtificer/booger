@@ -369,13 +369,18 @@ pub fn list_tools() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: "references".into(),
-            description: "Find all usages of a symbol: definitions, call sites, type references, and imports. Structural — not just text grep. Returns categorized results.".into(),
+            description: "Find all usages of a symbol: definitions, call sites, type references, and imports. Structural — not just text grep. Returns categorized results. Optional scope filter: only return definition, call, type, import, or reference.".into(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "symbol": {
                         "type": "string",
                         "description": "The symbol name to find references for"
+                    },
+                    "scope": {
+                        "type": "string",
+                        "description": "Filter to this ref kind only: definition, call, type, import, or reference",
+                        "enum": ["definition", "call", "type", "import", "reference"]
                     },
                     "path_prefix": {
                         "type": "string",
@@ -1292,6 +1297,7 @@ fn tool_references(args: &Value, project_root: &PathBuf) -> ToolResult {
     };
 
     let path_prefix = args.get("path_prefix").and_then(|v| v.as_str());
+    let scope = args.get("scope").and_then(|v| v.as_str());
     let (output_mode, offset, head_limit, _) = parse_format_opts(args, "content");
 
     let all_chunks = match store.all_chunks(path_prefix, None) {
@@ -1368,6 +1374,18 @@ fn tool_references(args: &Value, project_root: &PathBuf) -> ToolResult {
                     });
                 }
             }
+        }
+    }
+
+    // Optional scope filter: only include this ref kind
+    if let Some(s) = scope {
+        match s {
+            "definition" => references.clear(),
+            "call" | "type" | "import" | "reference" => {
+                definitions.retain(|_| false);
+                references.retain(|r| r.ref_kind == s);
+            }
+            _ => {}
         }
     }
 
@@ -2354,6 +2372,34 @@ mod tests {
             result.content[0].text.trim(),
             "No matches for symbol 'xyznonexistentsymbol'."
         );
+    }
+
+    #[test]
+    fn references_scope_call_returns_only_call_sites() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("references", &json!({
+            "symbol": "helper",
+            "scope": "call",
+            "output_mode": "count"
+        }), &root);
+        assert!(result.is_error.is_none());
+        let text = &result.content[0].text;
+        assert!(text.contains("0 definition(s)"), "scope=call should exclude definition: {text}");
+        assert!(text.contains("1 reference(s)"), "should have one call site (test_helper): {text}");
+    }
+
+    #[test]
+    fn references_scope_definition_returns_only_definitions() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("references", &json!({
+            "symbol": "helper",
+            "scope": "definition",
+            "output_mode": "count"
+        }), &root);
+        assert!(result.is_error.is_none());
+        let text = &result.content[0].text;
+        assert!(text.contains("1 definition(s)"));
+        assert!(text.contains("0 reference(s)"));
     }
 
     // ── status ──

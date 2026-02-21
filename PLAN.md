@@ -259,10 +259,8 @@ Things I (the agent) actually want, based on daily use:
   "search X, then return symbols (or references) for the top N matching paths"
   would cut round-trips when I'm exploring ("what's in the files that match X?").
 
-- **Scope filter on references** — `references` already classifies hits as
-  definition/call/type/import. A filter (e.g. `scope: "call"`) so I can ask "only
-  call sites for symbol X" would let me skip definition and type refs when I only
-  care about who calls it.
+- **~~Scope filter on references~~** ✅ Shipped — `references` accepts optional
+  `scope` (definition | call | type | import | reference); returns only that ref kind.
 
 ### Low — nice to have
 
