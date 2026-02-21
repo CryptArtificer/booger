@@ -198,6 +198,14 @@ enum ProjectCommands {
         #[arg(default_value = ".")]
         path: String,
     },
+    /// Register and index multiple projects from a parent directory
+    AddAll {
+        /// Parent directory containing project subdirectories
+        path: String,
+        /// Also index each project after registering
+        #[arg(long, default_value_t = true)]
+        index: bool,
+    },
     /// Remove a registered project
     Remove {
         /// Project name to remove
@@ -572,6 +580,49 @@ fn cmd_project(sub: ProjectCommands) -> Result<()> {
             reg.add(name.clone(), abs_path.clone());
             reg.save()?;
             eprintln!("Registered project '{name}' -> {}", abs_path.display());
+        }
+        ProjectCommands::AddAll { path, index } => {
+            let parent = PathBuf::from(&path)
+                .canonicalize()
+                .unwrap_or_else(|_| PathBuf::from(&path));
+            if !parent.is_dir() {
+                anyhow::bail!("Not a directory: {}", parent.display());
+            }
+            let mut reg = ProjectRegistry::load()?;
+            let mut added = Vec::new();
+            let mut entries: Vec<_> = std::fs::read_dir(&parent)?
+                .filter_map(|e| e.ok())
+                .collect();
+            entries.sort_by_key(|e| e.file_name());
+            for entry in entries {
+                let sub = entry.path();
+                if !sub.is_dir() { continue; }
+                // Skip hidden directories and common non-project dirs
+                let dir_name = entry.file_name().to_string_lossy().to_string();
+                if dir_name.starts_with('.') || dir_name == "node_modules" || dir_name == "target" {
+                    continue;
+                }
+                let name = dir_name.clone();
+                let abs = sub.canonicalize().unwrap_or(sub);
+                if reg.projects.contains_key(&name) {
+                    eprintln!("  skip {name} (already registered)");
+                    continue;
+                }
+                reg.add(name.clone(), abs.clone());
+                eprintln!("  + {name} -> {}", abs.display());
+                added.push((name, abs));
+            }
+            reg.save()?;
+            eprintln!("Registered {} project(s)", added.len());
+
+            if index {
+                for (name, abs) in &added {
+                    eprintln!("\nIndexing {name}...");
+                    if let Err(e) = cmd_index(&abs.to_string_lossy()) {
+                        eprintln!("  warning: indexing {name} failed: {e}");
+                    }
+                }
+            }
         }
         ProjectCommands::Remove { name } => {
             let mut reg = ProjectRegistry::load()?;
