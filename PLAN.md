@@ -287,6 +287,55 @@ Things I (the agent) actually want, based on daily use:
   persistence across restarts. Named sessions that survive server restarts (stored
   in SQLite) would let me resume context across conversation boundaries.
 
+- **Session handoff for model switch** — Not core to booger (search/index/working
+  memory), but very useful: when the user starts a new chat (new model), there's
+  no context. A `handoff` that returns focus + annotations + optional "current
+  goal" would let the new agent (or a pasted blob) get up to speed without
+  re-reading PLAN, README, and docs every time. Depends on persistent sessions.
+
+## Session handoff / persistent context
+
+**Problem:** When the user switches to a new model (or new chat), there is no
+persistent context. Every session we re-do the same dance: read PLAN, README,
+docs, re-familiarize. The new agent has no idea what we were working on, what
+we focused, or what we annotated. This isn't booger's main goal (search/index
+and working memory *within* a session are), but solving it would be very useful.
+
+**What booger could do:**
+
+1. **Handoff document** — A tool or resource (e.g. `handoff` or
+   `booger://project/X/context`) that returns a single blob for the project:
+   - Current focus paths
+   - All annotations (target + note), or for a named session
+   - Optional short "current goal" or "session summary" (freeform text the user
+     or previous agent can set)
+   - Last index time / status one-liner
+   - Optionally: top-level directory-summary so "what is this repo" is in one place
+
+   User (or new agent) runs it at the start of a new chat and pastes the result.
+   New model gets "here's what we're working on and what we know" without
+   re-reading all docs.
+
+2. **Persistent sessions** — Store session state (focus, annotations, optional
+   goal/summary) in SQLite keyed by session name. Sessions survive MCP/process
+   restart. So the *previous* agent's focus and annotations are still there
+   when the *new* agent loads that session or requests the handoff.
+
+3. **Writable "goal" or "summary"** — One field per project or per session that
+   the user or agent can set: "Working on: scope filter for references." The
+   handoff document includes it so the new agent knows what to do next.
+
+4. **Project briefing (optional)** — A cached one-pager from the index
+   (directory-summary at root, entry points, maybe recent branch-diff summary).
+   New agent can call `booger briefing` instead of reading PLAN + README + all
+   of doc/ to get "what is this project."
+
+**Minimal slice:** A `handoff` tool that returns focus + annotations + (if we
+add it) one "goal" line, as markdown or plain text. No new tables if we reuse
+annotations + workset; we might add a small `session_goal` or `project_summary`
+table. Persistent sessions (survive restart) would make handoff actually useful
+across model switches.
+
 ## Non-Goals (for now)
 
 - Web UI
