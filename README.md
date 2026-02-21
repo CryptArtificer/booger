@@ -35,6 +35,7 @@ a single static binary.
 | **[Search & Benchmarks](doc/search.md)** | How search works, token savings, performance numbers |
 | **[User Guide](doc/guide.md)** | Configuration, languages, semantic search, git, volatile context |
 | **[Security](doc/security.md)** | Threat model, hardening, verified properties |
+| **[Licenses](doc/licenses.md)** | Dependency license audit (0 copyleft in runtime) |
 | **[Architecture](doc/architecture.md)** | Mermaid diagrams of every subsystem |
 | **[Concepts](doc/concepts.md)** | FTS5, Tree-sitter, MCP, BM25, BLAKE3, embeddings |
 | **[Live Demo](doc/demo.md)** | 11-step walkthrough of an agent tracing a call chain |
