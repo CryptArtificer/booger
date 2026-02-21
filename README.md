@@ -1,7 +1,7 @@
 # Booger
 
 <p align="center">
-  <img src="doc/rw-booger.png" width="400" alt="Ralph Wiggum: Hey, I found a booger!" />
+  <img src="doc/rw-booger.png" width="400" alt="Named after Ralph Wiggum — the only thing he's really good at finding. AI agents are a lot like Ralph: endlessly poking around, not always sure what they're looking for, but occasionally pulling out exactly what you need. Booger helps them find it faster." />
 </p>
 
 <p align="center">
