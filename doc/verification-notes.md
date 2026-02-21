@@ -34,7 +34,7 @@ Short records of what was checked for specific features, so future changes donâ€
 **Evidence**
 
 - Tool `search-expand` in **src/mcp/tools.rs**: definition ~line 280, handler `tool_search_expand` ~851, call_tool branch ~646. Runs search, dedupes paths, takes first `expand_top` (default 5, max 20), then `store.list_symbols(Some(path), None)` per path. Output: "Search: N result(s) (expanding top K path(s))" then "--- path ---" and symbol lines. Empty search returns same explain_empty / index-first message as search.
-- Tests: `search_expand_returns_search_plus_symbols_for_top_paths`, `search_expand_empty_returns_explain_message`. **src/mcp/tools.rs** ~2270, ~2285.
+- Tests: `search_expand_returns_search_plus_symbols_for_top_paths`, `search_expand_empty_returns_explain_message`, `search_expand_path_prefix_filters_results`, `search_expand_path_prefix_empty_returns_guidance`, `search_expand_expand_top_one_returns_one_path`, `search_expand_expand_top_capped_at_20`. **src/mcp/tools.rs** (path_prefix and expand_top cap covered).
 
 **Integration**
 

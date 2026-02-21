@@ -20,7 +20,7 @@ for structural chunking, stores everything in [SQLite](https://sqlite.org/) with
 [MCP](https://modelcontextprotocol.io/) or CLI. It's designed to be the tool that
 AI agents use to efficiently find and reason about code.
 
-24 tools. 7 languages. 88 tests. Structural search, references, git-aware diffs,
+24 tools. 7 languages. 94 tests. Structural search, references, git-aware diffs,
 semantic embeddings, volatile working memory, batch calls, test discovery — all in
 a single static binary.
 
@@ -188,7 +188,7 @@ and MCP over stdio. No network listener, no daemon.
 make test       # or: cargo test
 ```
 
-88 tests across 4 modules:
+94 tests across 4 modules:
 
 | Module | Tests | Coverage |
 |---|---|---|

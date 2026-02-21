@@ -2294,6 +2294,62 @@ mod tests {
     }
 
     #[test]
+    fn search_expand_path_prefix_filters_results() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("search-expand", &json!({
+            "query": "main",
+            "path_prefix": "src/",
+            "expand_top": 5
+        }), &root);
+        assert!(result.is_error.is_none());
+        let text = &result.content[0].text;
+        assert!(text.contains("--- src/"), "output should only contain paths under src/: {text}");
+        assert!(!text.contains("--- doc/"), "output should not contain doc paths: {text}");
+    }
+
+    #[test]
+    fn search_expand_path_prefix_empty_returns_guidance() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("search-expand", &json!({
+            "query": "main",
+            "path_prefix": "nonexistent/"
+        }), &root);
+        assert!(result.is_error.is_none());
+        let text = &result.content[0].text;
+        assert!(text.starts_with("Path prefix has no indexed files."), "{text}");
+        assert!(text.contains("Run: booger index"), "{text}");
+    }
+
+    #[test]
+    fn search_expand_expand_top_one_returns_one_path() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("search-expand", &json!({
+            "query": "helper",
+            "expand_top": 1
+        }), &root);
+        assert!(result.is_error.is_none());
+        let text = &result.content[0].text;
+        assert!(text.contains("expanding top 1 path(s)"), "{text}");
+        let section_count = text.matches("\n--- ").count();
+        assert_eq!(section_count, 1, "expected exactly one expanded path section: {text}");
+    }
+
+    #[test]
+    fn search_expand_expand_top_capped_at_20() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("search-expand", &json!({
+            "query": "fn",
+            "expand_top": 99
+        }), &root);
+        assert!(result.is_error.is_none());
+        let text = &result.content[0].text;
+        let re = regex::Regex::new(r"expanding top (\d+) path\(s\)").unwrap();
+        let cap = re.captures(text).expect("output should match 'expanding top N path(s)'");
+        let n: usize = cap.get(1).unwrap().as_str().parse().unwrap();
+        assert!(n <= 20, "expand_top 99 should be capped at 20, got {}: {}", n, text);
+    }
+
+    #[test]
     fn search_empty_no_indexed_files() {
         let dir = TempDir::new().unwrap();
         let root = dir.path().to_path_buf();
