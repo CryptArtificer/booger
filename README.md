@@ -1,7 +1,7 @@
 # Booger
 
 <p align="center">
-  <img src="doc/rw-booger.png" width="400" alt="Ralph Wiggum picking his nose" title="Named after Ralph Wiggum — the only thing he's really good at finding. AI agents are a lot like Ralph: endlessly poking around, not always sure what they're looking for, but occasionally pulling out exactly what you need." />
+  <img src="doc/rw-booger.png" width="400" alt="Ralph Wiggum picking his nose" title="Named after the only thing Ralph Wiggum is genuinely, undeniably good at: finding stuff nobody asked him to look for. AI agents are basically Ralph — wandering around the codebase, poking at things, getting distracted, occasionally eating paste. But every now and then they pull out something brilliant and hold it up proudly: 'I found it!' Booger just makes sure they find it on the first try instead of the forty-seventh." />
 </p>
 
 <p align="center">
