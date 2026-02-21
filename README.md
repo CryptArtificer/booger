@@ -20,7 +20,7 @@ for structural chunking, stores everything in [SQLite](https://sqlite.org/) with
 [MCP](https://modelcontextprotocol.io/) or CLI. It's designed to be the tool that
 AI agents use to efficiently find and reason about code.
 
-23 tools. 7 languages. 77 tests. Structural search, references, git-aware diffs,
+24 tools. 7 languages. 88 tests. Structural search, references, git-aware diffs,
 semantic embeddings, volatile working memory, batch calls, test discovery — all in
 a single static binary.
 
@@ -123,6 +123,7 @@ restarting the MCP session:
 |---|---|
 | | **Search & Discovery** |
 | `search` | Full-text search with [BM25](https://en.wikipedia.org/wiki/Okapi_BM25) ranking and volatile context re-ranking |
+| `search-expand` | Search then return symbols for the top N matching paths in one call (bounded, no pagination) |
 | `grep` | Regex/literal search within indexed chunks — matching lines with context |
 | `references` | Find all usages of a symbol: definitions, call sites, type refs, imports |
 | `symbols` | Structural outline of a file/directory with smart signatures |
@@ -187,7 +188,7 @@ and MCP over stdio. No network listener, no daemon.
 make test       # or: cargo test
 ```
 
-77 tests across 4 modules:
+88 tests across 4 modules:
 
 | Module | Tests | Coverage |
 |---|---|---|
@@ -201,7 +202,7 @@ make test       # or: cargo test
 ```
 Agent (Cursor / Codex / CLI)
   → MCP (JSON-RPC 2.0 over stdio)
-    → 23 tool handlers
+    → 24 tool handlers
       → Tree-sitter (7 languages)
       → SQLite + FTS5
       → git (structural diffs)

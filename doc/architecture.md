@@ -13,7 +13,7 @@ graph TB
     subgraph "booger (14 MB binary)"
         MCP["MCP Server<br/>JSON-RPC over stdio"]
         CLI["CLI<br/>clap"]
-        TOOLS["Tool Dispatch<br/>23 tools"]
+        TOOLS["Tool Dispatch<br/>24 tools"]
         SEARCH["Search Engine"]
         INDEX["Indexer"]
         CTX["Volatile Context"]

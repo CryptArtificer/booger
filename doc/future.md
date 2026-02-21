@@ -90,7 +90,7 @@ status + recent log + diff stats in one round-trip.
 ### LangChain Integration
 Booger speaks MCP over stdio. LangChain's `langchain-mcp-adapters`
 package can expose MCP servers as LangChain tools automatically — all
-23 tools would become available to any LangChain agent with minimal
+24 tools would become available to any LangChain agent with minimal
 glue code. By explicitly defining parameters like `target_repo` and
 `focus_path` in the JSON schema, the LLM native to LangChain will
 automatically format its output to utilize booger's token-saving

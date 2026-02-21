@@ -51,6 +51,10 @@ semantic). Degrades gracefully when embeddings aren't available.
 the project name and ranked globally. Supports all the same output
 modes, pagination, and filters as `search`.
 
+## Search-then-expand
+
+`search-expand` runs a search, then returns symbols for the top N matching paths in one call. Parameters: `query` (required), `expand_top` (default 5, max 20), plus optional `path_prefix`, `language`, `kind`. Bounded expansion only (no pagination). Use when you want "what's in the files that match X?" without search → batch symbols.
+
 ## Batch Tool Calls
 
 `batch` accepts an array of tool calls (max 20) and returns all results

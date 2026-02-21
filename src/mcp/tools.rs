@@ -277,6 +277,31 @@ pub fn list_tools() -> Vec<ToolDefinition> {
             }),
         },
         ToolDefinition {
+            name: "search-expand".into(),
+            description: "Search then expand: run a search, then return symbols for the top N matching paths in one call. Bounded expansion (no pagination).".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query (FTS5 syntax)"
+                    },
+                    "expand_top": {
+                        "type": "integer",
+                        "description": "Number of search result paths to expand with symbols (default: 5)"
+                    },
+                    "path_prefix": {
+                        "type": "string",
+                        "description": "Filter search to files under this path"
+                    },
+                    "language": { "type": "string" },
+                    "kind": { "type": "string" },
+                    "project": project_prop()
+                },
+                "required": ["query"]
+            }),
+        },
+        ToolDefinition {
             name: "draft-commit".into(),
             description: "Generate a commit message from staged (or unstaged) changes. Analyzes structural diff (added/modified/removed symbols) to produce a meaningful message.".into(),
             input_schema: json!({
@@ -618,6 +643,7 @@ pub fn list_tools() -> Vec<ToolDefinition> {
 pub fn call_tool(name: &str, args: &Value, project_root: &PathBuf) -> ToolResult {
     match name {
         "search" => tool_search(args, project_root),
+        "search-expand" => tool_search_expand(args, project_root),
         "index" => tool_index(args, project_root),
         "status" => tool_status(args, project_root),
         "annotate" => tool_annotate(args, project_root),
@@ -820,6 +846,89 @@ fn tool_search(args: &Value, project_root: &PathBuf) -> ToolResult {
         }
         Err(e) => ToolResult::error(format!("Search failed: {e}")),
     }
+}
+
+fn tool_search_expand(args: &Value, project_root: &PathBuf) -> ToolResult {
+    let query = match args.get("query").and_then(|v| v.as_str()) {
+        Some(q) => q,
+        None => return ToolResult::error("Missing required parameter: query"),
+    };
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
+    let config = Config::load(&root).unwrap_or_default();
+
+    let expand_top = args
+        .get("expand_top")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize)
+        .unwrap_or(5)
+        .min(20);
+
+    let mut search_query = SearchQuery::new(query);
+    search_query.language = args.get("language").and_then(|v| v.as_str()).map(String::from);
+    search_query.path_prefix = args.get("path_prefix").and_then(|v| v.as_str()).map(String::from);
+    search_query.max_results = expand_top * 15;
+    search_query.session_id = args.get("session_id").and_then(|v| v.as_str()).map(String::from);
+    search_query.kind = args.get("kind").and_then(|v| v.as_str()).map(String::from);
+
+    let results = match crate::search::text::search(&root, &config, &search_query) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(format!("Search failed: {e}")),
+    };
+    if results.is_empty() {
+        let msg = crate::search::text::explain_empty_search(
+            &root,
+            &config,
+            search_query.path_prefix.as_deref(),
+        );
+        return ToolResult::success(msg);
+    }
+
+    let mut paths: Vec<&str> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for r in &results {
+        if seen.insert(r.file_path.as_str()) {
+            paths.push(r.file_path.as_str());
+            if paths.len() >= expand_top {
+                break;
+            }
+        }
+    }
+
+    let storage_dir = config.storage_dir(&root.canonicalize().unwrap_or_else(|_| root.clone()));
+    let store = match Store::open_if_exists(&storage_dir) {
+        Ok(Some(s)) => s,
+        Ok(None) => {
+            let path = root.canonicalize().unwrap_or_else(|_| root.clone());
+            return ToolResult::success(crate::search::text::format_index_first_message(
+                &path,
+                crate::search::text::IndexFirstKind::NoIndex,
+            ));
+        }
+        Err(e) => return ToolResult::error(format!("Failed to open store: {e}")),
+    };
+
+    let mut out = format!("Search: {} result(s) (expanding top {} path(s))\n\n", results.len(), paths.len());
+    for path in paths {
+        let symbols = store.list_symbols(Some(path), None).unwrap_or_default();
+        out.push_str(&format!("--- {} ---\n", path));
+        if symbols.is_empty() {
+            out.push_str("(no symbols)\n");
+        } else {
+            for s in &symbols {
+                let name = s.chunk_name.as_deref().unwrap_or("");
+                let sig = s.signature.as_deref().unwrap_or_else(|| s.content.lines().next().unwrap_or(""));
+                out.push_str(&format!("{}:{} [{}] {}\n", s.file_path, s.start_line, s.chunk_kind, name));
+                if !sig.is_empty() {
+                    out.push_str(&format!("  {}\n", sig.trim()));
+                }
+            }
+        }
+        out.push('\n');
+    }
+    ToolResult::success(out.trim_end().to_string())
 }
 
 fn tool_index(args: &Value, project_root: &PathBuf) -> ToolResult {
@@ -2097,9 +2206,10 @@ mod tests {
     #[test]
     fn list_tools_returns_all() {
         let tools = list_tools();
-        assert!(tools.len() >= 23);
+        assert!(tools.len() >= 24);
         let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
         assert!(names.contains(&"search"));
+        assert!(names.contains(&"search-expand"));
         assert!(names.contains(&"batch"));
         assert!(names.contains(&"workspace-search"));
         assert!(names.contains(&"tests-for"));
@@ -2153,6 +2263,33 @@ mod tests {
         assert!(result.is_error.is_none());
         let text = result.content[0].text.trim();
         assert!(text.starts_with("Path prefix has no indexed files."), "{text}");
+        assert!(text.contains("Run: booger index"), "{text}");
+    }
+
+    #[test]
+    fn search_expand_returns_search_plus_symbols_for_top_paths() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("search-expand", &json!({
+            "query": "helper",
+            "expand_top": 2
+        }), &root);
+        assert!(result.is_error.is_none());
+        let text = &result.content[0].text;
+        assert!(text.starts_with("Search:"), "{text}");
+        assert!(text.contains("expanding top"), "{text}");
+        assert!(text.contains("---"), "{text}");
+        assert!(text.contains("src/"), "{text}");
+    }
+
+    #[test]
+    fn search_expand_empty_returns_explain_message() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().to_path_buf();
+        let config = Config::default();
+        let _ = crate::index::index_directory(&root, &config);
+        let result = call_tool("search-expand", &json!({"query": "anything"}), &root);
+        assert!(result.is_error.is_none());
+        let text = &result.content[0].text;
         assert!(text.contains("Run: booger index"), "{text}");
     }
 

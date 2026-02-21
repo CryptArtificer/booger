@@ -81,7 +81,7 @@ memory.
 
 ### M5 — MCP Server
 - [x] MCP protocol implementation (JSON-RPC over stdio)
-- [x] 23 tools: search, grep, references, symbols, workspace-search, hybrid-search, semantic-search, tests-for, directory-summary, changed-since, index, status, embed, annotate, annotations, focus, visit, forget, branch-diff, draft-commit, changelog, batch, projects
+- [x] 24 tools: search, search-expand, grep, references, symbols, workspace-search, hybrid-search, semantic-search, tests-for, directory-summary, changed-since, index, status, embed, annotate, annotations, focus, visit, forget, branch-diff, draft-commit, changelog, batch, projects
 - [x] Expose resources: indexed project stats
 - [x] Agent-friendly structured output (content, files_with_matches, signatures, count)
 - [x] Multi-project support via `project` parameter
@@ -182,7 +182,7 @@ src/
     mod.rs         — MCP server entry point
     server.rs      — JSON-RPC over stdio loop
     protocol.rs    — JSON-RPC + MCP type definitions
-    tools.rs       — 23 tool definitions + handlers
+    tools.rs       — 24 tool definitions + handlers
     resources.rs   — resource definitions + handlers
   git/
     mod.rs         — git integration entry point
@@ -252,10 +252,8 @@ Things I (the agent) actually want, based on daily use:
 - **~~Test association~~** ✅ Shipped — `tests-for` finds tests by naming convention,
   module structure (e.g. Rust `mod tests`), and content (tests that reference the symbol).
 
-- **Search-then-expand** — I often do: search with `files_with_matches` → then batch
-  `symbols` (or `references`) for the top N result paths. A single tool that does
-  "search X, then return symbols (or references) for the top N matching paths"
-  would cut round-trips when I'm exploring ("what's in the files that match X?").
+- **~~Search-then-expand~~** ✅ Shipped — `search-expand` runs a search then returns
+  symbols for the top N matching paths in one call (expand_top, default 5, max 20). No pagination.
 
 - **~~Scope filter on references~~** ✅ Shipped — `references` accepts optional
   `scope` (definition | call | type | import | reference); returns only that ref kind.
