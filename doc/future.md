@@ -91,12 +91,18 @@ status + recent log + diff stats in one round-trip.
 Booger speaks MCP over stdio. LangChain's `langchain-mcp-adapters`
 package can expose MCP servers as LangChain tools automatically — all
 23 tools would become available to any LangChain agent with minimal
-glue code.
+glue code. By explicitly defining parameters like `target_repo` and
+`focus_path` in the JSON schema, the LLM native to LangChain will
+automatically format its output to utilize booger's token-saving
+features (output modes, pagination, kind filters).
 
 ### AutoGen Integration
 Microsoft's AutoGen framework supports custom tool providers. Booger's
 MCP tools could be exposed as AutoGen tools, enabling multi-agent
-workflows where specialized agents share a common code index.
+workflows where specialized agents share a common code index. The same
+JSON schema approach applies — explicitly defined parameters guide the
+LLM to use booger's compact output modes and scoping features
+automatically, without prompt engineering.
 
 ### HTTP/gRPC Server Mode
 `booger serve` for remote access. Enables shared indexes across a team
