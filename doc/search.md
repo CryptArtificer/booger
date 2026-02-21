@@ -137,8 +137,30 @@ and lock files for a fair comparison. Tokens estimated at ~4 chars/token.
 `rg` is already filtered to source files only. The reduction comes from
 booger returning structured signatures instead of raw matching lines.
 
-For rare terms like `dispatch` (only 3x), rg already returns little.
-For common terms like `search` (932x), the difference is dramatic.
+For rare terms like `dispatch` (only 4x), rg already returns little.
+For common terms like `search` (933x), the difference is dramatic.
+
+### Per-Tool Token Savings
+
+How each tool compares to the `rg` equivalent for the same task.
+Measured on the booger repo (45 files, 455 chunks).
+
+| Tool | `rg` equiv | booger | Reduction | Notes |
+|---|---|---|---|---|
+| `references` (count) | 4,446 chars | 32 chars | **139x** | "How many usages of dispatch?" |
+| `references` (files_with_matches) | 4,446 chars | 147 chars | **31x** | "Which files use dispatch?" |
+| `symbols` (count) | 39,801 chars | 13 chars | **3,317x** | "How many symbols in src/mcp/?" |
+| `symbols` (signatures) | 39,801 chars | 9,572 chars | **4x** | Full structural outline |
+| `directory-summary` | 55,281 chars | 3,151 chars | **18x** | One-call architectural overview |
+| `tests-for` (count) | 713 chars | 12 chars | **59x** | "Are there tests for search?" |
+| `changed-since` (count) | 36,150 chars | 13 chars | **3,012x** | "Anything re-indexed today?" |
+| `batch` (3x count) | 8,322 chars | 317 chars | **26x** | Search + symbols + refs in one call |
+| `grep` (10 results) | 3,241 chars | 905 chars | **4x** | Targeted regex, capped output |
+
+The biggest wins come from count and files_with_matches modes — agents
+often just need a number or a file list, not every matching line.
+`directory-summary` has no `rg` equivalent at all; you'd need multiple
+commands and manual aggregation.
 
 ## Performance
 
