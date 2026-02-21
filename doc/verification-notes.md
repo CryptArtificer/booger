@@ -39,3 +39,7 @@ Short records of what was checked for specific features, so future changes don�
 **Integration**
 
 - MCP: indexed project, `search-expand` with query "dispatch", expand_top 2 → JSON content contains "Search:", "expanding top 2", "--- src/mcp/server.rs ---", and symbol lines. Empty index → content contains "Run: booger index" with path.
+
+**Noted risk (same as other tools)**
+
+- search-expand calls `Store::open_if_exists` after `search()` returns. In normal flow the store was already opened by search, so this is redundant; if there were a race or path mismatch between search and the second open, we could return "No index found" despite having had results. Not introduced by search-expand; references/symbols use the same pattern. Worth remembering when touching store-open logic.
