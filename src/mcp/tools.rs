@@ -813,9 +813,13 @@ fn tool_search(args: &Value, project_root: &PathBuf) -> ToolResult {
 }
 
 fn tool_index(args: &Value, project_root: &PathBuf) -> ToolResult {
-    let root = match resolve_project(args, project_root) {
-        Ok(r) => r,
-        Err(e) => return ToolResult::error(e),
+    let root = if let Some(path) = args.get("path").and_then(|v| v.as_str()) {
+        PathBuf::from(path).canonicalize().unwrap_or_else(|_| PathBuf::from(path))
+    } else {
+        match resolve_project(args, project_root) {
+            Ok(r) => r,
+            Err(e) => return ToolResult::error(e),
+        }
     };
     let config = Config::load(&root).unwrap_or_default();
 
@@ -1986,8 +1990,5 @@ fn resolve_project(args: &Value, default_root: &PathBuf) -> Result<PathBuf, Stri
         }
         return Err(format!("Unknown project: '{project_name}'. Use 'projects' tool to list registered projects."));
     }
-    Ok(args.get("path")
-        .and_then(|v| v.as_str())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| default_root.clone()))
+    Ok(default_root.clone())
 }
