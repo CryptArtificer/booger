@@ -41,6 +41,7 @@ a single static binary.
 | **[Live Demo](doc/demo.md)** | 11-step walkthrough of an agent tracing a call chain |
 | **[Future Additions](doc/future.md)** | Roadmap and planned features |
 | **[Verification notes](doc/verification-notes.md)** | Gotchas and evidence for specific features (e.g. index-first guidance) |
+| **[Next tasks](NEXT.md)** | Open GitHub issues and task list (checkboxes) |
 | **[Project Plan](PLAN.md)** | Milestones and design decisions |
 
 ## Install
