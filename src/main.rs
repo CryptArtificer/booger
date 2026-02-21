@@ -602,6 +602,10 @@ fn cmd_project(sub: ProjectCommands) -> Result<()> {
                 if dir_name.starts_with('.') || dir_name == "node_modules" || dir_name == "target" {
                     continue;
                 }
+                if !sub.join(".git").exists() {
+                    eprintln!("  skip {dir_name} (not a git repo)");
+                    continue;
+                }
                 let name = dir_name.clone();
                 let abs = sub.canonicalize().unwrap_or(sub);
                 if reg.projects.contains_key(&name) {
