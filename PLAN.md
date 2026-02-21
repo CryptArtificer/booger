@@ -67,7 +67,7 @@ memory.
 ### M3 — Semantic Search
 - [x] Embedding generation via local Ollama (nomic-embed-text, 768d)
 - [x] Vector storage in SQLite (f32 BLOBs, cosine similarity)
-- [ ] Hybrid ranking: text score + semantic score
+- [x] Hybrid ranking: text score + semantic score
 - [x] `booger semantic <query>` CLI command
 - [x] MCP tool: `embed` and `semantic-search`
 
@@ -215,46 +215,55 @@ Things I (the agent) actually want, based on daily use:
   comment. Right now they're all equal. A `scope` filter (`definition`, `call`,
   `reference`, `comment`) would save me from reading irrelevant hits.
 
-- **"What changed since I last looked?"** — a session-aware diff. I annotate files
-  via `focus`, I work on them, but if someone else (or I in another session) edits
-  a focused file, I have no way to know. A `changed-since` tool that takes a
-  timestamp or session start and returns modified symbols would eliminate stale
-  assumptions.
+- **~~"What changed since I last looked?"~~** ✅ Shipped — `changed-since` takes an
+  ISO 8601 timestamp and returns symbols from files re-indexed after that time.
 
 - **Cross-file type flow** — given a type or struct, find all functions that accept
   it, return it, or contain it as a field. This is the structural version of "who
   touches this data?" and would be transformative for understanding unfamiliar
   codebases.
 
-- **Batch tool calls** — MCP lets the client batch, but from the agent side I often
-  want to say "search X AND get symbols for the top 3 result files" in one round
-  trip. A `pipeline` or `multi` tool that accepts an array of tool calls and returns
-  all results would cut my latency in half for exploratory workflows.
+- **~~Batch tool calls~~** ✅ Shipped — `batch` accepts an array of tool calls (max 20)
+  and returns all results in one round-trip.
+
+- **Auto-index or "index first" guidance** — When I call search/references/symbols on
+  a project that isn't indexed (or the path has no indexed files), I get empty
+  results and can't tell why. Either auto-index on first search (with size/time
+  limits) or return a clear message: "Project X not indexed. Run: booger index
+  <path>". Then I can suggest the user run index or retry without guessing.
+
+- **Explain empty results** — When search/references/symbols return 0 results, a
+  one-line reason would help: "No matches" vs "Project not indexed" vs "Path
+  prefix has no indexed files". I'd know whether to suggest indexing, broaden the
+  query, or try a different path.
 
 ### Medium — would use often
 
-- **Hybrid ranking** — combine FTS + semantic scores. Right now I have to choose
-  between `search` (keyword) and `semantic-search` (meaning). A single query that
-  blends both would give me the best of both without two round-trips.
+- **~~Hybrid ranking~~** ✅ Shipped — `hybrid-search` combines FTS + semantic
+  scores with tunable alpha (default 0.7 FTS / 0.3 semantic).
 
-- **Inline annotations in results** — when I've annotated `src/mcp/server.rs:51`
-  with "dispatch entry point — check error handling", I want that note to appear
-  *in* search results that include that line range. Right now annotations exist
-  in a separate silo and I have to remember to check them.
+- **~~Inline annotations in results~~** ✅ Shipped — `[note]` lines are injected into
+  search results for annotated targets; annotations also boost rank by +2.
 
 - **Stale embedding detection** — after re-indexing, some chunks change but their
   embeddings are from the old content. A `embed --stale` or automatic invalidation
   on content change would keep semantic search honest.
 
-- **Directory summaries** — `symbols` on a directory gives me every symbol in every
-  file. What I often want is a higher-level view: "this directory has 12 files, 47
-  functions, 8 structs, main responsibilities appear to be X, Y, Z". Pre-computed
-  or on-demand directory-level summaries would help me orient faster in large
-  codebases.
+- **~~Directory summaries~~** ✅ Shipped — `directory-summary` returns file count,
+  languages, symbol kinds, entry points, and subdirectory structure in one call.
 
-- **Test association** — given a function, find its tests (by naming convention,
-  proximity, or import graph). Given a test, find what it tests. This is trivial
-  for humans ("it's right below") but hard for agents without structural support.
+- **~~Test association~~** ✅ Shipped — `tests-for` finds tests by naming convention,
+  module structure (e.g. Rust `mod tests`), and content (tests that reference the symbol).
+
+- **Search-then-expand** — I often do: search with `files_with_matches` → then batch
+  `symbols` (or `references`) for the top N result paths. A single tool that does
+  "search X, then return symbols (or references) for the top N matching paths"
+  would cut round-trips when I'm exploring ("what's in the files that match X?").
+
+- **Scope filter on references** — `references` already classifies hits as
+  definition/call/type/import. A filter (e.g. `scope: "call"`) so I can ask "only
+  call sites for symbol X" would let me skip definition and type refs when I only
+  care about who calls it.
 
 ### Low — nice to have
 

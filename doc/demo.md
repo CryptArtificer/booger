@@ -158,7 +158,7 @@ src/mcp/tools.rs:1361 [call] in function (tool_hybrid_search) ToolResult::succes
 run()                                          ← stdin loop
   → dispatch()                                 ← route by method
     → handle_tools_call()                      ← extract tool name + args
-      → call_tool()                            ← dispatch to 1 of 18 tools
+      → call_tool()                            ← dispatch to 1 of 23 tools
         → tool_search() / tool_symbols() / … ← execute tool logic
           → format_results()                   ← format output (4 callers)
             → matching_notes()                 ← inject [note] annotations
