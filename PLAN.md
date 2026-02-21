@@ -232,7 +232,7 @@ Things I (the agent) actually want, based on daily use:
 
 - **~~Explain empty results~~** ✅ Shipped — When search/references/symbols return
   0 results, the tool reports a short reason: "No matches.", "Path prefix has no
-  indexed files.", "No index found. Run 'index' first.", or "No matches for symbol 'X'."
+  indexed files.", "No index found. Run: booger index \"<path>\"" (and similar with path), or "No matches for symbol 'X'."
 
 ### Medium — would use often
 
