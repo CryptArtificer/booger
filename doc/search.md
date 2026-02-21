@@ -125,15 +125,15 @@ and lock files for a fair comparison. Tokens estimated at ~4 chars/token.
 
 | Query | `rg` output | `rg` est. tokens | booger output | booger est. tokens | Reduction |
 |---|---|---|---|---|---|
-| `parse` | 123,147 chars | ~30,786 | 1,136 chars | ~284 | **108x** |
-| `error` | 150,985 chars | ~37,746 | 900 chars | ~225 | **167x** |
-| `config` | 119,369 chars | ~29,842 | 1,222 chars | ~305 | **97x** |
-| `search` | 1,200,863 chars | ~300,215 | 1,290 chars | ~322 | **932x** |
-| `dispatch` | 4,783 chars | ~1,195 | 1,253 chars | ~313 | **3x** |
-| `schema` | 48,907 chars | ~12,226 | 1,128 chars | ~282 | **43x** |
-| `test` | 190,980 chars | ~47,745 | 1,333 chars | ~333 | **143x** |
+| `parse` | 123,148 chars | ~30,787 | 1,136 chars | ~284 | **108x** |
+| `error` | 150,980 chars | ~37,745 | 900 chars | ~225 | **168x** |
+| `config` | 119,363 chars | ~29,840 | 1,222 chars | ~305 | **98x** |
+| `search` | 1,201,373 chars | ~300,343 | 1,290 chars | ~322 | **933x** |
+| `dispatch` | 4,891 chars | ~1,222 | 1,253 chars | ~313 | **4x** |
+| `schema` | 48,905 chars | ~12,226 | 1,128 chars | ~282 | **43x** |
+| `test` | 190,986 chars | ~47,746 | 1,333 chars | ~333 | **143x** |
 
-**Average: 213x reduction. Median: 108x.** These are honest numbers —
+**Average: 214x reduction. Median: 108x.** These are honest numbers —
 `rg` is already filtered to source files only. The reduction comes from
 booger returning structured signatures instead of raw matching lines.
 
@@ -145,6 +145,9 @@ For common terms like `search` (932x), the difference is dramatic.
 Measured on Apple Silicon. 5 projects, 664 files, 4,840 chunks.
 All times are averages over 5 runs.
 
+All measurements via MCP (JSON-RPC over stdio), averaged over 5 runs,
+on Apple Silicon. Booger project: 45 files, 455 chunks.
+
 ### Indexing
 
 | Operation | Time |
@@ -152,34 +155,50 @@ All times are averages over 5 runs.
 | Full index — booger (45 files, 455 chunks) | 65 ms |
 | Full index — meld-api (502 files, 2,863 chunks) | 689 ms |
 | Full index — fk (78 files, 1,269 chunks) | 144 ms |
-| Incremental re-index (no changes) | 37 ms |
+| Incremental re-index (no changes) | 23 ms |
 
-### Single-Project Tools (booger repo)
+### Search & Discovery
 
-| Tool | Avg | Min |
-|---|---|---|
-| `search` (content, 5 results) | 53 ms | 32 ms |
-| `search` (signatures, 10 results) | 39 ms | 32 ms |
-| `search` (count) | 39 ms | 32 ms |
-| `symbols` (signatures) | 33 ms | 26 ms |
-| `references` | 46 ms | 31 ms |
-| `grep` | 33 ms | 28 ms |
-| `directory-summary` | 27 ms | 26 ms |
-| `tests-for` | 29 ms | 28 ms |
-| `changed-since` (count) | 32 ms | 27 ms |
-| `status` | 25 ms | 24 ms |
-| `batch` (3 tools) | 40 ms | 37 ms |
-| `branch-diff` | 83 ms | 70 ms |
-| `draft-commit` | 65 ms | 57 ms |
+| Tool | Avg | Min | Output |
+|---|---|---|---|
+| `search` (content, 5 results) | 28 ms | 25 ms | 41,775 chars |
+| `search` (signatures, 10 results) | 24 ms | 24 ms | 511 chars |
+| `search` (count) | 25 ms | 24 ms | 11 chars |
+| `grep` (regex) | 25 ms | 25 ms | 905 chars |
+| `references` | 27 ms | 26 ms | 4,078 chars |
+| `symbols` (signatures, src/mcp/) | 24 ms | 24 ms | 9,572 chars |
+| `directory-summary` | 26 ms | 25 ms | 3,151 chars |
+| `tests-for` | 27 ms | 26 ms | 20,440 chars |
+| `changed-since` (count) | 26 ms | 25 ms | 13 chars |
 
-### Cross-Project Tools
+### Indexing & Status
 
 | Tool | Avg | Min |
 |---|---|---|
-| `workspace-search` (signatures, 10 results) | 287 ms | 195 ms |
-| `workspace-search` (count) | 213 ms | 199 ms |
+| `status` | 22 ms | 21 ms |
+| `index` (no changes) | 23 ms | 23 ms |
 
-### Stress Tests
+### Git
+
+| Tool | Avg | Min |
+|---|---|---|
+| `branch-diff` | 59 ms | 58 ms |
+| `draft-commit` | 49 ms | 48 ms |
+
+### Multi-tool
+
+| Tool | Avg | Min | Output |
+|---|---|---|---|
+| `batch` (3 tools) | 33 ms | 33 ms | 317 chars |
+
+### Cross-Project (29 registered projects)
+
+| Tool | Avg | Min | Output |
+|---|---|---|---|
+| `workspace-search` (signatures, 10) | 256 ms | 186 ms | 1,136 chars |
+| `workspace-search` (count) | 187 ms | 183 ms | 109 chars |
+
+### Stress Tests (independently verified by Codex)
 
 | Test | Result |
 |---|---|
