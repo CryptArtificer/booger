@@ -28,4 +28,4 @@ Work items from the [Agent Wishlist](PLAN.md#agent-wishlist) and milestones are 
 2. **Tests** — Add or update tests so the new/changed behavior is covered. Fix any tests that break.
 3. **Integration** — Run the feature end-to-end (CLI and/or MCP as relevant): real call, real response. Don’t rely on unit tests alone.
 
-Then verify against the issue. Add a short verification note in `doc/verification-notes.md` when the change is non-trivial.
+Then verify against the issue. For non-trivial changes, add a short note in [doc/verification-notes.md](doc/verification-notes.md) (gotchas, evidence, integration) so future changes don’t regress the same points.
