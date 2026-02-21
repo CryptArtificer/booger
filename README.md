@@ -162,24 +162,19 @@ Plus `head_limit`/`offset` for pagination and `max_lines` to cap output.
 
 ## Security
 
-Booger is designed for **local, single-user, agent-driven use** over
-stdio. It has no network listener by default.
+Booger is designed for **local, trusted developer environments** — CLI
+and MCP over stdio. No network listener, no daemon.
 
-**Verified properties** (independently tested by Codex):
+**Verified properties** (independently stress-tested by Codex):
 
-- SQL queries are fully parameterized (no injection)
-- Git commands use `Command::new` with explicit args (no shell interpolation)
-- Batch calls capped at 20 (DoS guard)
-- Workspace-search threads capped at 10 per request
-- `changed-since` validates ISO 8601 timestamps (no silent bad input)
-- Unknown project names error instead of silently falling back
-- Resource URIs are exact-matched (no prefix tricks)
-- JSON-RPC error codes follow spec: `-32700` parse / `-32600` invalid request
-- MCP serialization uses graceful error handling (no panics)
-- 77 unit tests cover store, search, tools, protocol, and config
+- Parameterized SQL (no injection), explicit git args (no shell interpolation)
+- Batch calls capped at 20, workspace-search threads capped at 10
+- Timestamp validation, strict project/URI resolution, correct JSON-RPC error codes
+- No `unwrap()` in MCP paths, read-only ops never create files
+- 77 unit tests across store, tools, protocol, and config
+- Stable under concurrent load (60+ parallel requests, 0 failures)
 
-**Not in scope** (local tool, no network): authentication, tenant
-isolation, TLS, rate limiting at transport level.
+**Not in scope** (local tool): auth, tenant isolation, TLS, transport rate limiting.
 
 [Full security details →](doc/security.md)
 
