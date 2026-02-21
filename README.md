@@ -40,6 +40,7 @@ a single static binary.
 | **[Concepts](doc/concepts.md)** | FTS5, Tree-sitter, MCP, BM25, BLAKE3, embeddings |
 | **[Live Demo](doc/demo.md)** | 11-step walkthrough of an agent tracing a call chain |
 | **[Future Additions](doc/future.md)** | Roadmap and planned features |
+| **[Verification notes](doc/verification-notes.md)** | Gotchas and evidence for specific features (e.g. index-first guidance) |
 | **[Project Plan](PLAN.md)** | Milestones and design decisions |
 
 ## Install
