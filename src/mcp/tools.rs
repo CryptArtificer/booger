@@ -2118,6 +2118,36 @@ mod tests {
         assert!(result.content[0].text.contains("result"));
     }
 
+    #[test]
+    fn search_empty_no_matches() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("search", &json!({"query": "xyznonexistenttoken"}), &root);
+        assert!(result.is_error.is_none());
+        assert_eq!(result.content[0].text.trim(), "No matches.");
+    }
+
+    #[test]
+    fn search_empty_path_prefix_has_no_indexed_files() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("search", &json!({
+            "query": "helper",
+            "path_prefix": "other/"
+        }), &root);
+        assert!(result.is_error.is_none());
+        assert_eq!(result.content[0].text.trim(), "Path prefix has no indexed files.");
+    }
+
+    #[test]
+    fn search_empty_no_indexed_files() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().to_path_buf();
+        let config = Config::default();
+        let _ = crate::index::index_directory(&root, &config);
+        let result = call_tool("search", &json!({"query": "anything"}), &root);
+        assert!(result.is_error.is_none());
+        assert_eq!(result.content[0].text.trim(), "No indexed files. Run 'index' first.");
+    }
+
     // ── batch ──
 
     #[test]
@@ -2253,6 +2283,39 @@ mod tests {
         assert!(result.content[0].text.contains("result"));
     }
 
+    #[test]
+    fn symbols_empty_path_prefix_has_no_indexed_files() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("symbols", &json!({
+            "path_prefix": "other/"
+        }), &root);
+        assert!(result.is_error.is_none());
+        assert_eq!(result.content[0].text.trim(), "Path prefix has no indexed files.");
+    }
+
+    #[test]
+    fn symbols_empty_no_indexed_files() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().to_path_buf();
+        let config = Config::default();
+        let _ = crate::index::index_directory(&root, &config);
+        let result = call_tool("symbols", &json!({}), &root);
+        assert!(result.is_error.is_none());
+        assert_eq!(result.content[0].text.trim(), "No indexed files. Run 'index' first.");
+    }
+
+    #[test]
+    fn symbols_empty_no_symbols_found() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path().to_path_buf();
+        std::fs::write(root.join("readme.txt"), "Just plain text.\n").unwrap();
+        let config = Config::default();
+        let _ = crate::index::index_directory(&root, &config);
+        let result = call_tool("symbols", &json!({"path_prefix": "readme.txt"}), &root);
+        assert!(result.is_error.is_none());
+        assert_eq!(result.content[0].text.trim(), "No symbols found.");
+    }
+
     // ── grep ──
 
     #[test]
@@ -2283,6 +2346,30 @@ mod tests {
             "output_mode": "count"
         }), &root);
         assert!(result.is_error.is_none());
+    }
+
+    #[test]
+    fn references_empty_path_prefix_has_no_indexed_files() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("references", &json!({
+            "symbol": "helper",
+            "path_prefix": "other/"
+        }), &root);
+        assert!(result.is_error.is_none());
+        assert_eq!(result.content[0].text.trim(), "Path prefix has no indexed files.");
+    }
+
+    #[test]
+    fn references_empty_no_matches_for_symbol() {
+        let (_dir, root) = setup_test_project();
+        let result = call_tool("references", &json!({
+            "symbol": "xyznonexistentsymbol"
+        }), &root);
+        assert!(result.is_error.is_none());
+        assert_eq!(
+            result.content[0].text.trim(),
+            "No matches for symbol 'xyznonexistentsymbol'."
+        );
     }
 
     // ── status ──
