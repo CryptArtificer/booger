@@ -80,11 +80,23 @@ Beyond import indexing: resolve imports to actual files/modules, build
 a proper graph, and answer "What depends on X?" and "What does X depend
 on?" queries.
 
+### Git Call Optimization
+Shell-based git commands (`git status`, `git diff`, `git log`) are
+expensive — 4-6 seconds each due to process spawn overhead. Options:
+batch multiple git queries into a single subprocess call, cache recent
+git state with short TTL, or add a `git-summary` tool that returns
+status + recent log + diff stats in one round-trip.
+
 ### LangChain Integration
 Booger speaks MCP over stdio. LangChain's `langchain-mcp-adapters`
 package can expose MCP servers as LangChain tools automatically — all
 23 tools would become available to any LangChain agent with minimal
 glue code.
+
+### AutoGen Integration
+Microsoft's AutoGen framework supports custom tool providers. Booger's
+MCP tools could be exposed as AutoGen tools, enabling multi-agent
+workflows where specialized agents share a common code index.
 
 ### HTTP/gRPC Server Mode
 `booger serve` for remote access. Enables shared indexes across a team
