@@ -338,6 +338,22 @@ impl Store {
         Ok(results)
     }
 
+    /// Returns true if there is at least one chunk in the index, optionally
+    /// restricted to files under `path_prefix`. Used to explain empty results
+    /// (e.g. "Path prefix has no indexed files" vs "No matches").
+    pub fn path_has_chunks(&self, path_prefix: Option<&str>) -> Result<bool> {
+        let count: i64 = if let Some(prefix) = path_prefix {
+            self.conn.query_row(
+                "SELECT COUNT(1) FROM chunks c JOIN files f ON f.id = c.file_id WHERE f.path LIKE ?1 || '%'",
+                params![prefix],
+                |row| row.get(0),
+            )?
+        } else {
+            self.conn.query_row("SELECT COUNT(1) FROM chunks", [], |row| row.get(0))?
+        };
+        Ok(count > 0)
+    }
+
     /// Return all chunks, optionally filtered by path and/or kind.
     /// Unlike `list_symbols`, this includes raw chunks.
     pub fn all_chunks(
@@ -951,6 +967,19 @@ mod tests {
 
         let results = store.search("nonexistentxyz", None, None, None, 10).unwrap();
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn path_has_chunks_empty_and_prefix() {
+        let (_dir, store) = test_store();
+        assert!(!store.path_has_chunks(None).unwrap());
+        assert!(!store.path_has_chunks(Some("src/")).unwrap());
+
+        insert_test_file(&store, "src/lib.rs", "rust");
+        assert!(store.path_has_chunks(None).unwrap());
+        assert!(store.path_has_chunks(Some("src/")).unwrap());
+        assert!(store.path_has_chunks(Some("src/lib")).unwrap());
+        assert!(!store.path_has_chunks(Some("other/")).unwrap());
     }
 
     #[test]

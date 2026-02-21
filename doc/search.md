@@ -104,6 +104,22 @@ Search tools support multiple output modes to minimize token usage:
 Additional controls: `head_limit` / `offset` for pagination, `max_lines`
 to cap content output, `kind` to filter by chunk type.
 
+## Explain empty results
+
+When `search`, `references`, or `symbols` return 0 results, the tool reports
+a short reason so agents know what to do next:
+
+| Reason | Meaning |
+|---|---|
+| **No matches.** | Index exists and has chunks; the query or filters matched nothing. |
+| **Path prefix has no indexed files.** | A path prefix was given and no indexed file path starts with it. |
+| **No index found. Run 'index' first.** | No database at the project's storage path. |
+| **No indexed files. Run 'index' first.** | Database exists but has no chunks (e.g. empty or failed index). |
+| **No matches for symbol 'X'.** | (`references` only) Index has chunks but no definition or reference for that symbol. |
+
+This avoids the "empty result with no explanation" case and helps agents suggest
+indexing, broadening the query, or changing the path.
+
 ## Why Booger?
 
 AI agents spend most of their tokens **finding** code, not **writing** it.

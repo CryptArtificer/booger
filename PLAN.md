@@ -232,10 +232,9 @@ Things I (the agent) actually want, based on daily use:
   limits) or return a clear message: "Project X not indexed. Run: booger index
   <path>". Then I can suggest the user run index or retry without guessing.
 
-- **Explain empty results** — When search/references/symbols return 0 results, a
-  one-line reason would help: "No matches" vs "Project not indexed" vs "Path
-  prefix has no indexed files". I'd know whether to suggest indexing, broaden the
-  query, or try a different path.
+- **~~Explain empty results~~** ✅ Shipped — When search/references/symbols return
+  0 results, the tool reports a short reason: "No matches.", "Path prefix has no
+  indexed files.", "No index found. Run 'index' first.", or "No matches for symbol 'X'."
 
 ### Medium — would use often
 

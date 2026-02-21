@@ -804,11 +804,32 @@ fn tool_search(args: &Value, project_root: &PathBuf) -> ToolResult {
     match crate::search::text::search(&root, &config, &search_query) {
         Ok(results) => {
             if results.is_empty() {
-                return ToolResult::success("No results found.");
+                let msg = explain_empty_search(&root, &config, search_query.path_prefix.as_deref());
+                return ToolResult::success(msg);
             }
             ToolResult::success(format_results(&results, &opts))
         }
         Err(e) => ToolResult::error(format!("Search failed: {e}")),
+    }
+}
+
+/// Explain why search returned no results: path has no chunks vs no matches.
+fn explain_empty_search(root: &PathBuf, config: &Config, path_prefix: Option<&str>) -> String {
+    let storage_dir = config.storage_dir(&root.canonicalize().unwrap_or_else(|_| root.clone()));
+    match Store::open_if_exists(&storage_dir) {
+        Ok(Some(store)) => {
+            match store.path_has_chunks(path_prefix) {
+                Ok(false) => {
+                    if path_prefix.is_some() {
+                        "Path prefix has no indexed files.".into()
+                    } else {
+                        "No indexed files. Run 'index' first.".into()
+                    }
+                }
+                _ => "No matches.".into(),
+            }
+        }
+        _ => "No index found. Run 'index' first.".into(),
     }
 }
 
@@ -1140,7 +1161,17 @@ fn tool_symbols(args: &Value, project_root: &PathBuf) -> ToolResult {
     match store.list_symbols(path_prefix, kind) {
         Ok(results) => {
             if results.is_empty() {
-                return ToolResult::success("No symbols found.");
+                let msg = match store.path_has_chunks(path_prefix) {
+                    Ok(false) => {
+                        if path_prefix.is_some() {
+                            "Path prefix has no indexed files."
+                        } else {
+                            "No indexed files. Run 'index' first."
+                        }
+                    }
+                    _ => "No symbols found.",
+                };
+                return ToolResult::success(msg.to_string());
             }
             ToolResult::success(format_results(&results, &opts))
         }
@@ -1284,6 +1315,15 @@ fn tool_references(args: &Value, project_root: &PathBuf) -> ToolResult {
         Err(e) => return ToolResult::error(format!("Failed to load chunks: {e}")),
     };
 
+    if all_chunks.is_empty() {
+        let msg = if path_prefix.is_some() {
+            "Path prefix has no indexed files."
+        } else {
+            "No indexed files. Run 'index' first."
+        };
+        return ToolResult::success(msg.to_string());
+    }
+
     let pattern = match regex::Regex::new(&format!(r"\b{}\b", regex::escape(symbol))) {
         Ok(p) => p,
         Err(e) => return ToolResult::error(format!("Invalid symbol pattern: {e}")),
@@ -1351,7 +1391,7 @@ fn tool_references(args: &Value, project_root: &PathBuf) -> ToolResult {
     let total_refs = references.len();
 
     if total_defs == 0 && total_refs == 0 {
-        return ToolResult::success(format!("No references found for '{symbol}'."));
+        return ToolResult::success(format!("No matches for symbol '{symbol}'."));
     }
 
     match output_mode.as_str() {
