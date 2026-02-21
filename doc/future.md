@@ -22,22 +22,18 @@ occurs: function name > call site > type position > string literal >
 comment. A `scope` filter (`definition`, `call`, `reference`, `comment`)
 would let agents skip irrelevant hits entirely.
 
-### "What Changed Since I Last Looked?"
-A session-aware diff. When an agent has focused files and another process
-modifies them, the agent currently has no way to know. A `changed-since`
-tool that takes a timestamp or session start and returns modified symbols
-would eliminate stale assumptions.
+### ~~"What Changed Since I Last Looked?"~~ ✅ Shipped
+Implemented as the `changed-since` MCP tool. Takes an ISO 8601 timestamp
+and returns all symbols from files re-indexed after that time.
 
 ### Cross-File Type Flow
 Given a type or struct, find all functions that accept it, return it, or
 contain it as a field. This is the structural version of "who touches
 this data?" — transformative for understanding unfamiliar codebases.
 
-### Batch Tool Calls
-A `pipeline` or `multi` tool that accepts an array of tool calls and
-returns all results in one round trip. Agents often need "search X AND
-get symbols for the top 3 result files" — today that's 4 calls, could
-be 1.
+### ~~Batch Tool Calls~~ ✅ Shipped
+Implemented as the `batch` MCP tool. Accepts an array of `{tool, arguments}`
+objects and returns all results in a single round-trip.
 
 ## Medium Priority
 
@@ -46,15 +42,15 @@ After re-indexing, some chunks change but their embeddings are from the
 old content. Either `embed --stale` for explicit refresh, or automatic
 invalidation when a chunk's content hash changes.
 
-### Directory Summaries
-`symbols` on a directory gives every symbol in every file. What agents
-often want is a higher-level view: "12 files, 47 functions, 8 structs,
-main responsibilities: X, Y, Z". Pre-computed or on-demand.
+### ~~Directory Summaries~~ ✅ Shipped
+Implemented as the `directory-summary` MCP tool. Returns file count,
+languages, symbol kind breakdown, entry points, and subdirectory
+structure in a single call.
 
-### Test Association
-Given a function, find its tests (by naming convention, proximity, or
-import graph). Given a test, find what it tests. Trivial for humans,
-hard for agents without structural support.
+### ~~Test Association~~ ✅ Shipped
+Implemented as the `tests-for` MCP tool. Finds tests by naming
+convention, module structure (Rust `mod tests`), and content analysis
+(test functions that reference the symbol).
 
 ### Persistent Sessions
 Sessions are currently just string labels with no persistence across

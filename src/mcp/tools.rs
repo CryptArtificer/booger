@@ -456,6 +456,107 @@ pub fn list_tools() -> Vec<ToolDefinition> {
             }),
         },
         ToolDefinition {
+            name: "batch".into(),
+            description: "Execute multiple tool calls in a single round-trip. Returns all results as a JSON array. Dramatically reduces latency and token overhead for multi-step queries.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "calls": {
+                        "type": "array",
+                        "description": "Array of tool calls, each with 'tool' (name) and 'arguments' (object)",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "tool": { "type": "string" },
+                                "arguments": { "type": "object" }
+                            },
+                            "required": ["tool"]
+                        }
+                    }
+                },
+                "required": ["calls"]
+            }),
+        },
+        ToolDefinition {
+            name: "changed-since".into(),
+            description: "Find files and symbols that were re-indexed after a given timestamp. Useful for detecting what changed since you last looked.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "since": {
+                        "type": "string",
+                        "description": "ISO 8601 / RFC 3339 timestamp (e.g. '2026-02-20T10:00:00Z'). Returns files indexed after this time."
+                    },
+                    "kind": {
+                        "type": "string",
+                        "description": "Filter by chunk kind: function, struct, import, etc."
+                    },
+                    "output_mode": {
+                        "type": "string",
+                        "description": "Output mode",
+                        "enum": ["content", "files_with_matches", "signatures", "count"]
+                    },
+                    "head_limit": {
+                        "type": "integer",
+                        "description": "Limit number of results"
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Skip first N results"
+                    },
+                    "project": project_prop()
+                },
+                "required": ["since"]
+            }),
+        },
+        ToolDefinition {
+            name: "directory-summary".into(),
+            description: "High-level overview of a directory: file count, symbol counts by kind, languages, and key entry points. One call instead of multiple symbols calls.".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Directory path prefix to summarize"
+                    },
+                    "project": project_prop()
+                },
+                "required": ["path"]
+            }),
+        },
+        ToolDefinition {
+            name: "tests-for".into(),
+            description: "Find test functions associated with a given function or symbol. Matches by naming convention (test_<name>, <name>_test, <Name>Test, etc.) and by content (tests that reference the symbol).".into(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Function or symbol name to find tests for"
+                    },
+                    "output_mode": {
+                        "type": "string",
+                        "description": "Output mode",
+                        "enum": ["content", "files_with_matches", "signatures", "count"]
+                    },
+                    "head_limit": {
+                        "type": "integer",
+                        "description": "Limit number of results"
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Skip first N results"
+                    },
+                    "max_lines": {
+                        "type": "integer",
+                        "description": "Max lines per result in content mode"
+                    },
+                    "project": project_prop()
+                },
+                "required": ["symbol"]
+            }),
+        },
+        ToolDefinition {
             name: "workspace-search".into(),
             description: "Search across ALL registered projects at once. Results are tagged with the project name. Useful for finding code across multiple repos.".into(),
             input_schema: json!({
@@ -529,6 +630,10 @@ pub fn call_tool(name: &str, args: &Value, project_root: &PathBuf) -> ToolResult
         "references" => tool_references(args, project_root),
         "hybrid-search" => tool_hybrid_search(args, project_root),
         "workspace-search" => tool_workspace_search(args, project_root),
+        "batch" => tool_batch(args, project_root),
+        "changed-since" => tool_changed_since(args, project_root),
+        "directory-summary" => tool_directory_summary(args, project_root),
+        "tests-for" => tool_tests_for(args, project_root),
         "projects" => tool_projects(),
         _ => ToolResult::error(format!("Unknown tool: {name}")),
     }
@@ -1544,6 +1649,307 @@ fn tool_workspace_search(args: &Value, default_root: &PathBuf) -> ToolResult {
             ToolResult::success(out)
         }
     }
+}
+
+fn tool_batch(args: &Value, project_root: &PathBuf) -> ToolResult {
+    let calls = match args.get("calls").and_then(|v| v.as_array()) {
+        Some(c) => c,
+        None => return ToolResult::error("Missing required parameter: calls (array)"),
+    };
+
+    let mut results: Vec<Value> = Vec::new();
+    for (i, call) in calls.iter().enumerate() {
+        let tool = call.get("tool").and_then(|v| v.as_str()).unwrap_or("");
+        let call_args = call.get("arguments").cloned().unwrap_or(json!({}));
+
+        if tool.is_empty() {
+            results.push(json!({"index": i, "error": "missing 'tool' field"}));
+            continue;
+        }
+        if tool == "batch" {
+            results.push(json!({"index": i, "error": "recursive batch calls not allowed"}));
+            continue;
+        }
+
+        let result = call_tool(tool, &call_args, project_root);
+        let text = result.content.first()
+            .map(|c| c.text.as_str())
+            .unwrap_or("");
+        results.push(json!({
+            "index": i,
+            "tool": tool,
+            "result": text,
+            "isError": result.is_error,
+        }));
+    }
+
+    ToolResult::success(serde_json::to_string_pretty(&results).unwrap_or_default())
+}
+
+fn tool_changed_since(args: &Value, project_root: &PathBuf) -> ToolResult {
+    let since = match args.get("since").and_then(|v| v.as_str()) {
+        Some(s) => s,
+        None => return ToolResult::error("Missing required parameter: since"),
+    };
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
+    let config = Config::load(&root).unwrap_or_default();
+
+    // Trigger auto-index
+    let _ = crate::search::text::search(&root, &config, &SearchQuery::new("__noop__"));
+
+    let storage_dir = config.storage_dir(
+        &root.canonicalize().unwrap_or_else(|_| root.clone()),
+    );
+    let store = match Store::open_if_exists(&storage_dir) {
+        Ok(Some(s)) => s,
+        Ok(None) => return ToolResult::success("No index found. Run 'index' first."),
+        Err(e) => return ToolResult::error(format!("Failed to open store: {e}")),
+    };
+
+    let kind = args.get("kind").and_then(|v| v.as_str());
+    let (output_mode, offset, head_limit, max_lines) = parse_format_opts(args, "content");
+
+    let results = match store.chunks_changed_since(since, kind) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(format!("Query failed: {e}")),
+    };
+
+    if results.is_empty() {
+        return ToolResult::success(format!("No changes since {since}."));
+    }
+
+    let annotations = load_annotations(&root, &config);
+    let opts = FormatOpts {
+        output_mode: &output_mode,
+        offset,
+        head_limit,
+        max_lines,
+        annotations: &annotations,
+    };
+    ToolResult::success(format_results(&results, &opts))
+}
+
+fn tool_directory_summary(args: &Value, project_root: &PathBuf) -> ToolResult {
+    let path = match args.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => return ToolResult::error("Missing required parameter: path"),
+    };
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
+    let config = Config::load(&root).unwrap_or_default();
+
+    // Trigger auto-index
+    let _ = crate::search::text::search(&root, &config, &SearchQuery::new("__noop__"));
+
+    let storage_dir = config.storage_dir(
+        &root.canonicalize().unwrap_or_else(|_| root.clone()),
+    );
+    let store = match Store::open_if_exists(&storage_dir) {
+        Ok(Some(s)) => s,
+        Ok(None) => return ToolResult::success("No index found. Run 'index' first."),
+        Err(e) => return ToolResult::error(format!("Failed to open store: {e}")),
+    };
+
+    let all = match store.all_chunks(Some(path), None) {
+        Ok(c) => c,
+        Err(e) => return ToolResult::error(format!("Query failed: {e}")),
+    };
+
+    if all.is_empty() {
+        return ToolResult::success(format!("No indexed content under '{path}'."));
+    }
+
+    let mut files: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    let mut languages: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    let mut kinds: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    let mut entry_points: Vec<String> = Vec::new();
+
+    for chunk in &all {
+        files.insert(&chunk.file_path);
+        if let Some(ref lang) = chunk.language {
+            *languages.entry(lang.as_str()).or_insert(0) += 1;
+        }
+        *kinds.entry(&chunk.chunk_kind).or_insert(0) += 1;
+
+        let name = chunk.chunk_name.as_deref().unwrap_or("");
+        let is_entry = name == "main"
+            || name == "run"
+            || name == "init"
+            || name == "setup"
+            || name == "start"
+            || name.starts_with("cmd_")
+            || name.starts_with("handle_")
+            || (chunk.chunk_kind == "function" && name.starts_with("new"));
+
+        if is_entry {
+            let sig = chunk.signature.as_deref()
+                .or_else(|| chunk.content.lines().next())
+                .unwrap_or(name);
+            entry_points.push(format!(
+                "  {}:{} [{}] {}",
+                chunk.file_path, chunk.start_line, chunk.chunk_kind, sig
+            ));
+        }
+    }
+
+    let mut out = format!("## {path}\n\n");
+    out.push_str(&format!("{} files, {} chunks\n\n", files.len(), all.len()));
+
+    out.push_str("Languages:\n");
+    let mut lang_vec: Vec<_> = languages.iter().collect();
+    lang_vec.sort_by(|a, b| b.1.cmp(a.1));
+    for (lang, count) in &lang_vec {
+        out.push_str(&format!("  {lang}: {count}\n"));
+    }
+
+    out.push_str("\nSymbol kinds:\n");
+    let mut kinds_vec: Vec<_> = kinds.iter().collect();
+    kinds_vec.sort_by(|a, b| b.1.cmp(a.1));
+    for (kind, count) in &kinds_vec {
+        out.push_str(&format!("  {kind}: {count}\n"));
+    }
+
+    if !entry_points.is_empty() {
+        out.push_str("\nEntry points / key functions:\n");
+        for ep in &entry_points {
+            out.push_str(ep);
+            out.push('\n');
+        }
+    }
+
+    // Top-level files
+    let mut subdirs: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for f in &files {
+        let relative = f.strip_prefix(path).unwrap_or(f).trim_start_matches('/');
+        let dir = relative.split('/').next().unwrap_or(relative);
+        if relative.contains('/') {
+            *subdirs.entry(dir.to_string()).or_insert(0) += 1;
+        }
+    }
+    if !subdirs.is_empty() {
+        out.push_str("\nSubdirectories:\n");
+        let mut sd_vec: Vec<_> = subdirs.iter().collect();
+        sd_vec.sort_by(|a, b| b.1.cmp(a.1));
+        for (dir, count) in &sd_vec {
+            out.push_str(&format!("  {dir}/ ({count} files)\n"));
+        }
+    }
+
+    ToolResult::success(out)
+}
+
+fn tool_tests_for(args: &Value, project_root: &PathBuf) -> ToolResult {
+    let symbol = match args.get("symbol").and_then(|v| v.as_str()) {
+        Some(s) => s,
+        None => return ToolResult::error("Missing required parameter: symbol"),
+    };
+    let root = match resolve_project(args, project_root) {
+        Ok(r) => r,
+        Err(e) => return ToolResult::error(e),
+    };
+    let config = Config::load(&root).unwrap_or_default();
+
+    // Trigger auto-index
+    let _ = crate::search::text::search(&root, &config, &SearchQuery::new(symbol));
+
+    let storage_dir = config.storage_dir(
+        &root.canonicalize().unwrap_or_else(|_| root.clone()),
+    );
+    let store = match Store::open_if_exists(&storage_dir) {
+        Ok(Some(s)) => s,
+        Ok(None) => return ToolResult::success("No index found. Run 'index' first."),
+        Err(e) => return ToolResult::error(format!("Failed to open store: {e}")),
+    };
+
+    let all = match store.all_chunks(None, None) {
+        Ok(c) => c,
+        Err(e) => return ToolResult::error(format!("Query failed: {e}")),
+    };
+
+    let (output_mode, offset, head_limit, max_lines) = parse_format_opts(args, "content");
+
+    let sym_lower = symbol.to_lowercase();
+
+    let mut test_chunks: Vec<&crate::store::sqlite::SearchResult> = Vec::new();
+
+    for chunk in &all {
+        let name = chunk.chunk_name.as_deref().unwrap_or("");
+        let name_lower = name.to_lowercase();
+        let is_test_context = chunk.file_path.contains("test")
+            || chunk.file_path.contains("spec")
+            || chunk.file_path.ends_with("_test.go")
+            || chunk.file_path.ends_with("_test.rs")
+            || chunk.content.contains("#[test]")
+            || chunk.content.contains("#[cfg(test)]")
+            || chunk.content.contains("describe(")
+            || chunk.content.contains("it(")
+            || name_lower.starts_with("test_")
+            || name.ends_with("Test")
+            || name.ends_with("_test")
+            || name.ends_with("_spec");
+
+        // Check if this chunk follows a test module declaration in the same file
+        let in_test_module = all.iter().any(|other|
+            other.file_path == chunk.file_path
+            && other.chunk_kind == "module"
+            && other.chunk_name.as_deref().map_or(false, |n| n.contains("test"))
+            && other.start_line <= chunk.start_line
+        );
+        let is_test_context = is_test_context || in_test_module;
+
+        // Match by naming convention
+        let name_match = name_lower == format!("test_{sym_lower}")
+            || name_lower == format!("{sym_lower}_test")
+            || name_lower == format!("{sym_lower}_spec")
+            || name_lower == format!("test{sym_lower}")
+            || name_lower.starts_with(&format!("test_{sym_lower}_"))
+            || name_lower.ends_with(&format!("_{sym_lower}_test"))
+            || name_lower.contains(&format!("test_{sym_lower}"));
+
+        // Match by content (test function that references the symbol)
+        let content_match = !name_match
+            && is_test_context
+            && (chunk.chunk_kind == "function" || chunk.chunk_kind == "method")
+            && chunk.content.contains(symbol);
+
+        if name_match || content_match {
+            test_chunks.push(chunk);
+        }
+    }
+
+    if test_chunks.is_empty() {
+        return ToolResult::success(format!("No tests found for '{symbol}'."));
+    }
+
+    // Convert to owned for format_results
+    let owned: Vec<crate::store::sqlite::SearchResult> = test_chunks.iter().map(|r| {
+        crate::store::sqlite::SearchResult {
+            file_path: r.file_path.clone(),
+            language: r.language.clone(),
+            chunk_kind: r.chunk_kind.clone(),
+            chunk_name: r.chunk_name.clone(),
+            signature: r.signature.clone(),
+            start_line: r.start_line,
+            end_line: r.end_line,
+            content: r.content.clone(),
+            rank: 0.0,
+        }
+    }).collect();
+
+    let annotations = load_annotations(&root, &config);
+    let opts = FormatOpts {
+        output_mode: &output_mode,
+        offset,
+        head_limit,
+        max_lines,
+        annotations: &annotations,
+    };
+    ToolResult::success(format_results(&owned, &opts))
 }
 
 fn tool_projects() -> ToolResult {

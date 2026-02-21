@@ -397,6 +397,51 @@ impl Store {
         Ok(results)
     }
 
+    /// Return chunks from files indexed after a given timestamp.
+    pub fn chunks_changed_since(
+        &self,
+        since: &str,
+        kind: Option<&str>,
+    ) -> Result<Vec<SearchResult>> {
+        let mut sql = String::from(
+            "SELECT f.path, f.language, c.kind, c.name, c.signature, c.start_line, c.end_line, c.content
+             FROM chunks c
+             JOIN files f ON f.id = c.file_id
+             WHERE f.indexed_at > ?1",
+        );
+        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        params_vec.push(Box::new(since.to_string()));
+
+        if let Some(k) = kind {
+            sql.push_str(" AND c.kind = ?2");
+            params_vec.push(Box::new(k.to_string()));
+        }
+
+        sql.push_str(" ORDER BY f.indexed_at DESC, f.path, c.start_line");
+
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(param_refs.as_slice(), |row| {
+            Ok(SearchResult {
+                file_path: row.get(0)?,
+                language: row.get(1)?,
+                chunk_kind: row.get(2)?,
+                chunk_name: row.get(3)?,
+                signature: row.get(4)?,
+                start_line: row.get(5)?,
+                end_line: row.get(6)?,
+                content: row.get(7)?,
+                rank: 0.0,
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
     /// Return a breakdown of chunks by kind.
     pub fn kind_stats(&self) -> Result<Vec<(String, i64)>> {
         let mut stmt = self.conn.prepare(

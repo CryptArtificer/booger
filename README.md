@@ -20,8 +20,9 @@ for structural chunking, stores everything in [SQLite](https://sqlite.org/) with
 [MCP](https://modelcontextprotocol.io/) or CLI. It's designed to be the tool that
 AI agents use to efficiently find and reason about code.
 
-19 tools. 7 languages. Structural search, references, git-aware diffs, semantic
-embeddings, volatile working memory — all in a single static binary.
+23 tools. 7 languages. Structural search, references, git-aware diffs, semantic
+embeddings, volatile working memory, batch calls, test discovery — all in a
+single static binary.
 
 ## Why Booger?
 
@@ -188,6 +189,9 @@ still require a session restart for the client to discover them.
 | `workspace-search` | Search across **all** registered projects at once — results tagged by project name |
 | `semantic-search` | Similarity search via local embeddings (requires [Ollama](https://ollama.ai/)) |
 | `symbols` | List all symbols in a file/directory — structural outline with smart signatures |
+| `tests-for` | Find test functions for a given symbol — by naming convention and content analysis |
+| `directory-summary` | High-level overview of a directory: file count, symbol kinds, languages, entry points |
+| `changed-since` | Find files and symbols re-indexed after a timestamp — detect what changed |
 | | |
 | | **Indexing & Embeddings** |
 | `embed` | Generate embeddings for semantic search via [Ollama](https://ollama.ai/) |
@@ -205,6 +209,9 @@ still require a session restart for the client to discover them.
 | `branch-diff` | Structural diff between branches — added/modified/removed symbols per file |
 | `changelog` | Generate markdown changelog from branch diff |
 | `draft-commit` | Generate commit message from staged/unstaged structural changes |
+| | |
+| | **Multi-tool** |
+| `batch` | Execute multiple tool calls in one round-trip — array in, array out |
 | | |
 | | **Registry** |
 | `projects` | List registered projects |
@@ -259,9 +266,33 @@ semantic). Degrades gracefully when embeddings aren't available.
 
 ### Workspace Search
 
-`workspace-search` queries **all registered projects** in one call. Results
-are tagged with the project name and ranked globally. Supports all the same
-output modes, pagination, and filters as `search`.
+`workspace-search` queries **all registered projects** in one call (threaded,
+one thread per project). Results are tagged with the project name and ranked
+globally. Supports all the same output modes, pagination, and filters as `search`.
+
+### Batch Tool Calls
+
+`batch` accepts an array of tool calls and returns all results in a single
+round-trip. Eliminates the "search → get symbols → get references" 3-call
+pattern down to 1.
+
+### Test Discovery
+
+`tests-for` finds test functions associated with a symbol. Matches by:
+- Naming convention: `test_<name>`, `<name>_test`, `<Name>Test`
+- Module structure: functions inside `mod tests` blocks (Rust)
+- Content analysis: test functions that call or reference the symbol
+
+### Changed-Since Detection
+
+`changed-since` returns symbols from files re-indexed after a given timestamp.
+Answers "what changed since I last looked?" without diffing entire files.
+
+### Directory Summaries
+
+`directory-summary` gives a high-level overview in one call: file count,
+languages, symbol kind breakdown, entry points (`main`, `run`, `handle_*`,
+`cmd_*`, `new`), and subdirectory structure.
 
 Read-only operations (`status`, `search`, `annotations`, `forget`) never
 create a `.booger/` directory as a side effect.
@@ -410,7 +441,7 @@ type = "none"                 # "ollama" or "openai"
 Agent (Cursor / Codex / CLI)
   → MCP (JSON-RPC 2.0 over stdio)
     → dispatch (route by method)
-      → 19 tool handlers
+      → 23 tool handlers
         → tree-sitter (structural parsing, 7 languages)
         → SQLite + FTS5 (storage, indexing, search, volatile context)
         → git (structural branch diffs)
