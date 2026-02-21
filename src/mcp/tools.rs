@@ -1544,32 +1544,38 @@ fn tool_workspace_search(args: &Value, default_root: &PathBuf) -> ToolResult {
     let kind = args.get("kind").and_then(|v| v.as_str()).map(String::from);
     let (output_mode, offset, head_limit, max_lines) = parse_format_opts(args, "content");
 
+    const MAX_THREADS: usize = 10;
     let project_count = projects.len();
     let per_project = (max_results * 2 / project_count).max(5);
 
     type SR = crate::store::sqlite::SearchResult;
 
-    let handles: Vec<_> = projects.into_iter().map(|(name, path)| {
-        let lang = language.clone();
-        let k = kind.clone();
-        let q = query.to_string();
-        let pp = per_project;
-        std::thread::spawn(move || {
-            let config = Config::load(&path).unwrap_or_default();
-            let mut search_query = SearchQuery::new(&q);
-            search_query.language = lang;
-            search_query.kind = k;
-            search_query.max_results = pp;
-            let results = crate::search::text::search(&path, &config, &search_query)
-                .unwrap_or_default();
-            results.into_iter().map(|r| (name.clone(), r)).collect::<Vec<_>>()
-        })
-    }).collect();
-
     let mut all_results: Vec<(String, SR)> = Vec::new();
-    for h in handles {
-        if let Ok(batch) = h.join() {
-            all_results.extend(batch);
+
+    for batch in projects.chunks(MAX_THREADS) {
+        let handles: Vec<_> = batch.iter().map(|(name, path)| {
+            let name = name.clone();
+            let path = path.clone();
+            let lang = language.clone();
+            let k = kind.clone();
+            let q = query.to_string();
+            let pp = per_project;
+            std::thread::spawn(move || {
+                let config = Config::load(&path).unwrap_or_default();
+                let mut search_query = SearchQuery::new(&q);
+                search_query.language = lang;
+                search_query.kind = k;
+                search_query.max_results = pp;
+                let results = crate::search::text::search(&path, &config, &search_query)
+                    .unwrap_or_default();
+                results.into_iter().map(|r| (name.clone(), r)).collect::<Vec<_>>()
+            })
+        }).collect();
+
+        for h in handles {
+            if let Ok(b) = h.join() {
+                all_results.extend(b);
+            }
         }
     }
 
@@ -1656,7 +1662,12 @@ fn tool_workspace_search(args: &Value, default_root: &PathBuf) -> ToolResult {
 }
 
 fn tool_batch(args: &Value, project_root: &PathBuf) -> ToolResult {
+    const MAX_BATCH: usize = 20;
+
     let calls = match args.get("calls").and_then(|v| v.as_array()) {
+        Some(c) if c.len() > MAX_BATCH => {
+            return ToolResult::error(format!("Batch limited to {MAX_BATCH} calls, got {}", c.len()));
+        }
         Some(c) => c,
         None => return ToolResult::error("Missing required parameter: calls (array)"),
     };
@@ -1695,6 +1706,11 @@ fn tool_changed_since(args: &Value, project_root: &PathBuf) -> ToolResult {
         Some(s) => s,
         None => return ToolResult::error("Missing required parameter: since"),
     };
+    if chrono::DateTime::parse_from_rfc3339(since).is_err() {
+        return ToolResult::error(format!(
+            "Invalid timestamp: '{since}'. Expected ISO 8601 / RFC 3339 format (e.g. '2026-02-20T10:00:00Z')."
+        ));
+    }
     let root = match resolve_project(args, project_root) {
         Ok(r) => r,
         Err(e) => return ToolResult::error(e),
