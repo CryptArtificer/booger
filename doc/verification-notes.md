@@ -24,3 +24,18 @@ Short records of what was checked for specific features, so future changes don�
 **Verification**
 
 - CLI: empty dir → `booger search "x"` prints message with path. MCP: `references` and `symbols` with empty/no-index return JSON content containing the same style message with path.
+
+---
+
+## Search-expand (#3)
+
+**Acceptance (from issue):** New MCP tool returns search results plus symbols for top N result paths in one call.
+
+**Evidence**
+
+- Tool `search-expand` in **src/mcp/tools.rs**: definition ~line 280, handler `tool_search_expand` ~851, call_tool branch ~646. Runs search, dedupes paths, takes first `expand_top` (default 5, max 20), then `store.list_symbols(Some(path), None)` per path. Output: "Search: N result(s) (expanding top K path(s))" then "--- path ---" and symbol lines. Empty search returns same explain_empty / index-first message as search.
+- Tests: `search_expand_returns_search_plus_symbols_for_top_paths`, `search_expand_empty_returns_explain_message`. **src/mcp/tools.rs** ~2270, ~2285.
+
+**Integration**
+
+- MCP: indexed project, `search-expand` with query "dispatch", expand_top 2 → JSON content contains "Search:", "expanding top 2", "--- src/mcp/server.rs ---", and symbol lines. Empty index → content contains "Run: booger index" with path.
