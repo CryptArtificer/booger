@@ -7,8 +7,8 @@ back to the agent. Every output below is unedited.
 
 **Project:** booger (this repo)
 **Binary:** 14 MB, Rust, single static binary
-**Index time:** 2.1s full, 21ms incremental (no changes)
-**Search time:** 43ms
+**Index time:** 65ms full (45 files, 455 chunks), 37ms incremental (no changes)
+**Search time:** 32–53ms depending on output mode
 
 ---
 
@@ -311,13 +311,16 @@ search results alone.
 
 | Operation | Time |
 |---|---|
-| Full index (42 files, 352 chunks) | 2.1s |
-| Incremental index (no changes) | 21ms |
-| FTS search | 43ms |
-| References lookup | 40ms |
-| Symbols listing | 40ms |
+| Full index (45 files, 455 chunks) | 65ms |
+| Incremental index (no changes) | 37ms |
+| FTS search | 32–53ms |
+| References lookup | 31–46ms |
+| Symbols listing | 26–33ms |
+| directory-summary | 26–27ms |
+| tests-for | 28–29ms |
+| batch (3 tools) | 37–40ms |
 | Binary size | 14 MB |
-| Index size | 604 KB |
+| Index size | 760 KB |
 
 All measurements on Apple Silicon (M-series), single-threaded search,
 6-thread indexing. No network calls. No background processes.

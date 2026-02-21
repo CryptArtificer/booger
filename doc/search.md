@@ -119,32 +119,76 @@ AI agents spend most of their tokens **finding** code, not **writing** it.
 ## Measured Token Savings
 
 Benchmark: `workspace-search` (signatures mode, 10 results) vs `rg` across
-5 real projects (642 files, 4,699 chunks). Tokens estimated at ~4 chars/token.
+5 real projects (664 files, 4,840 chunks). Both tools search the same
+source files — `rg` excludes `node_modules`, `target`, `.git`, binaries,
+and lock files for a fair comparison. Tokens estimated at ~4 chars/token.
 
 | Query | `rg` output | `rg` est. tokens | booger output | booger est. tokens | Reduction |
 |---|---|---|---|---|---|
-| `parse` | 807,353 chars | ~201,838 | 984 chars | ~246 | **820x** |
-| `error` | 2,658,455 chars | ~664,613 | 777 chars | ~194 | **3,421x** |
-| `config` | 3,731,276 chars | ~932,819 | 1,004 chars | ~251 | **3,716x** |
-| `search` | 110,263,111 chars | ~27,565,777 | 1,200 chars | ~300 | **91,885x** |
-| `dispatch` | 975,924 chars | ~243,981 | 858 chars | ~214 | **1,137x** |
-| `schema` | 291,142 chars | ~72,785 | 1,079 chars | ~269 | **269x** |
-| `test` | 39,512,778 chars | ~9,878,194 | 933 chars | ~233 | **42,350x** |
+| `parse` | 123,147 chars | ~30,786 | 1,136 chars | ~284 | **108x** |
+| `error` | 150,985 chars | ~37,746 | 900 chars | ~225 | **167x** |
+| `config` | 119,369 chars | ~29,842 | 1,222 chars | ~305 | **97x** |
+| `search` | 1,200,863 chars | ~300,215 | 1,290 chars | ~322 | **932x** |
+| `dispatch` | 4,783 chars | ~1,195 | 1,253 chars | ~313 | **3x** |
+| `schema` | 48,907 chars | ~12,226 | 1,128 chars | ~282 | **43x** |
+| `test` | 190,980 chars | ~47,745 | 1,333 chars | ~333 | **143x** |
 
-**Average: 20,514x reduction.** Over a typical session with 5–10 searches,
-that's the difference between ~1,000 tokens and ~20,000,000 tokens for the
-same codebase understanding.
+**Average: 213x reduction. Median: 108x.** These are honest numbers —
+`rg` is already filtered to source files only. The reduction comes from
+booger returning structured signatures instead of raw matching lines.
+
+For rare terms like `dispatch` (only 3x), rg already returns little.
+For common terms like `search` (932x), the difference is dramatic.
 
 ## Performance
 
-Measured on 5 projects (642 files, 4,699 indexed chunks, Apple Silicon):
+Measured on Apple Silicon. 5 projects, 664 files, 4,840 chunks.
+All times are averages over 5 runs.
+
+### Indexing
+
+| Operation | Time |
+|---|---|
+| Full index — booger (45 files, 455 chunks) | 65 ms |
+| Full index — meld-api (502 files, 2,863 chunks) | 689 ms |
+| Full index — fk (78 files, 1,269 chunks) | 144 ms |
+| Incremental re-index (no changes) | 37 ms |
+
+### Single-Project Tools (booger repo)
+
+| Tool | Avg | Min |
+|---|---|---|
+| `search` (content, 5 results) | 53 ms | 32 ms |
+| `search` (signatures, 10 results) | 39 ms | 32 ms |
+| `search` (count) | 39 ms | 32 ms |
+| `symbols` (signatures) | 33 ms | 26 ms |
+| `references` | 46 ms | 31 ms |
+| `grep` | 33 ms | 28 ms |
+| `directory-summary` | 27 ms | 26 ms |
+| `tests-for` | 29 ms | 28 ms |
+| `changed-since` (count) | 32 ms | 27 ms |
+| `status` | 25 ms | 24 ms |
+| `batch` (3 tools) | 40 ms | 37 ms |
+| `branch-diff` | 83 ms | 70 ms |
+| `draft-commit` | 65 ms | 57 ms |
+
+### Cross-Project Tools
+
+| Tool | Avg | Min |
+|---|---|---|
+| `workspace-search` (signatures, 10 results) | 287 ms | 195 ms |
+| `workspace-search` (count) | 213 ms | 199 ms |
+
+### Stress Tests
+
+| Test | Result |
+|---|---|
+| 120 calls, 20 parallel clients | p50: 736ms, p95: 1,091ms, 0 failures |
+| 60 concurrent workspace-search | p50: 434ms, p95: 1,103ms, 0 failures |
+
+### Sizes
 
 | Metric | Value |
 |---|---|
-| Full index (642 files, 5 projects) | ~2 seconds |
-| Incremental re-index (no changes) | ~20 ms |
-| Workspace search (4,699 chunks, 5 projects, threaded) | ~40 ms |
-| Single-project search | ~30 ms |
-| Stress test (120 calls, 20 parallel clients) | p50: 736ms, p95: 1,091ms, 0 failures |
-| Memory (peak RSS, workspace search) | ~14 MB |
 | Binary size | 14 MB |
+| Memory (peak RSS, workspace search) | ~14 MB |

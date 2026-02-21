@@ -24,7 +24,8 @@ AI agents use to efficiently find and reason about code.
 semantic embeddings, volatile working memory, batch calls, test discovery — all in
 a single static binary.
 
-**Average 20,514x token reduction** vs raw `rg` across real projects.
+**Average 213x token reduction** vs `rg` in fair source-only comparison
+(median 108x, up to 932x for common terms).
 [See the benchmarks.](doc/search.md#measured-token-savings)
 
 ## Documentation
