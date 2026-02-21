@@ -26,6 +26,13 @@ would let agents skip irrelevant hits entirely.
 Implemented as the `changed-since` MCP tool. Takes an ISO 8601 timestamp
 and returns all symbols from files re-indexed after that time.
 
+### Smarter Project Discovery
+`project add-all` currently only picks up git repos. It should also
+detect project roots by looking for manifest files (`Cargo.toml`,
+`package.json`, `go.mod`, `pyproject.toml`, etc.) so non-git directories
+are registered too. Additional options: `--include-non-git` to register
+everything, `--dry-run` to preview what would be added.
+
 ### Cross-File Type Flow
 Given a type or struct, find all functions that accept it, return it, or
 contain it as a field. This is the structural version of "who touches
@@ -72,6 +79,12 @@ changed files — like auto-focus, but implicit and always-on.
 Beyond import indexing: resolve imports to actual files/modules, build
 a proper graph, and answer "What depends on X?" and "What does X depend
 on?" queries.
+
+### LangChain Integration
+Booger speaks MCP over stdio. LangChain's `langchain-mcp-adapters`
+package can expose MCP servers as LangChain tools automatically — all
+23 tools would become available to any LangChain agent with minimal
+glue code.
 
 ### HTTP/gRPC Server Mode
 `booger serve` for remote access. Enables shared indexes across a team
